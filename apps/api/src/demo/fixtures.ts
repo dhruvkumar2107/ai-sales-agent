@@ -104,6 +104,27 @@ export async function installDemoOrg(orgId = DEMO_ORG_ID) {
 
   for (const t of AGENT_TEMPLATES) await r.agents.set(agentConfigSchema.parse({ ...t, orgId }));
 
+  // A vehicle currently in the workshop (used by the "is my vehicle ready?" flow).
+  const jobStart = new Date(Date.now() - 3 * 3600_000);
+  await r.serviceBookings.set({
+    id: "svc-demo-inprogress",
+    orgId,
+    branchId: "br-whitefield-service",
+    customerName: "Deepak Sharma",
+    phone: "+919845012345",
+    vehicleNo: "KA03MN4567",
+    model: "Creta",
+    kilometres: 20150,
+    serviceType: "paid_service",
+    pickupDrop: false,
+    start: jobStart.toISOString(),
+    end: new Date(jobStart.getTime() + 5 * 3600_000).toISOString(),
+    status: "in_progress",
+    jobCardNo: "JC-24117",
+    estimatedReadyAt: "6 PM today",
+    createdAt: jobStart.toISOString(),
+  });
+
   await r.saveSettings({
     emi: { interestRate: 9.5, tenureMonths: 60, downPaymentPercent: 20 },
     callingHours: { start: "09:00", end: "20:00" },

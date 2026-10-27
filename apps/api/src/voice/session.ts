@@ -340,6 +340,8 @@ export class CallSession extends EventEmitter {
       this.langSwitchVotes = { lang, count: 0 };
       return;
     }
+    // Short or ambiguous utterances ("10", "ok") don't vote.
+    if (guess.confidence < 0.7) return;
     // Switch on a confident script change immediately, or on two consecutive utterances.
     this.langSwitchVotes = this.langSwitchVotes.lang === lang ? { lang, count: this.langSwitchVotes.count + 1 } : { lang, count: 1 };
     if (guess.confidence >= 0.9 || this.langSwitchVotes.count >= 2) {
@@ -435,7 +437,9 @@ export class CallSession extends EventEmitter {
       callerPhone: this.o.callerPhone,
       language: this.language,
       actions: this.actions,
-      canTransfer: this.o.transport.kind === "twilio" || this.o.transport.kind === "exotel",
+      // Browsers can't be bridged to a phone; the simulator's text transport fakes a successful transfer.
+      canTransfer: this.o.transport.kind !== "browser",
+      countMessage: () => void this.usage.messages++,
       log: (msg, extra) => this.log(msg, extra),
     };
   }

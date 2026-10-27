@@ -19,14 +19,14 @@ const RX = {
   safety: /brake|fire|smoke|accident|steering|airbag|fuel leak|ब्रेक|आग/i,
   emi: /\bemi\b|installment|instalment|kist|किस्त|monthly/i,
   price: /price|cost|kitne ka|kitna|on.?road|ex.?showroom|kimat|कीमत|दाम|rate/i,
-  compare: /compare|better than|\bvs\b|versus|nexon|seltos|brezza|city|ola|ather|tvs|bajaj|competitor/i,
+  compare: /compare|better than|\bvs\b|versus|nexon|seltos|brezza|ola|ather|tvs|bajaj|competitor/i,
   exchange: /exchange|old (car|bike|scooter|vehicle)|purani|पुरानी/i,
   testdrive: /test ?drive|test ?ride|टेस्ट ड्राइव|drive karna|chala ke dekh/i,
   status: /\bready\b|status|kab milegi|kab tak|job card|तैयार/i,
   service: /servic|सर्विस|repair|oil change|book.*slot/i,
   feedback: /\b([1-5])\b.*(star|out of)|rating|rate it|^\s*[1-5]\s*$/i,
-  yes: /(yes|yeah|sure|ok|okay|haan|han|ha|ji|theek|chalega|sari|houdu)|हाँ|हां|ठीक|ಹೌದು/i,
-  done: /that'?s all|nothing else|no thanks|bye|thank you|thanks|bas itna|dhanyavaad|शुक्रिया|धन्यवाद|ಧನ್ಯವಾದ/i,
+  yes: /\b(yes|yeah|sure|ok|okay|haan|han|ha|ji|theek|chalega|sari|houdu)\b|हाँ|हां|ठीक|ಹೌದು/i,
+  done: /that'?s all|nothing else|no thanks|bye\b|thank you|thanks|bas itna|dhanyavaad|शुक्रिया|धन्यवाद|ಧನ್ಯವಾದ/i,
   greetingOnly: /^(hi|hello|hey|namaste|namaskar|हेलो|नमस्ते)[\s.!]*$/i,
 };
 
@@ -88,7 +88,8 @@ function extract(all: string, models: string[]) {
   const vehicleNo = all.match(/\b([A-Z]{2}[\s-]?\d{1,2}[\s-]?[A-Z]{1,3}[\s-]?\d{3,4})\b/i)?.[1]?.toUpperCase().replace(/[\s-]/g, "");
   const lower = all.toLowerCase();
   const model = models.filter((m) => lower.includes(m.toLowerCase())).sort((a, b) => b.length - a.length)[0];
-  const timeM = all.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm|baje|बजे)\b/i);
+  // \b only works next to ASCII word characters, so Devanagari "बजे" gets no trailing boundary.
+  const timeM = all.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am\b|pm\b|baje\b|बजे)/i);
   let time: string | undefined;
   if (timeM) {
     let h = Number(timeM[1]);

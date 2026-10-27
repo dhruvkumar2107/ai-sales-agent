@@ -19,6 +19,8 @@ export interface ToolContext {
   };
   /** Telephony-aware transfer, injected by the session */
   canTransfer: boolean;
+  /** Meter a WhatsApp/SMS message against the call's cost */
+  countMessage: () => void;
   log: (msg: string, extra?: Record<string, unknown>) => void;
 }
 

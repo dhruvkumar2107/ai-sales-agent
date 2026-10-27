@@ -1,7 +1,7 @@
 import type { Language } from "@axo/shared";
 
 const HINDI_ROMAN = new Set(
-  "hai hain kya mujhe chahiye chahte kitna kitne kitni nahi nahin haan han ji bhai gaadi gadi kab aap aapka mera meri naam karna karni hoga hogi kaise kaisa kal aaj abhi wala wali lena leni dena batao bataiye bolo theek thik accha acha matlab paisa paise lakh kharidna khareedna dekhna chalega milega sakte sakta sakti hum main ka ki ke ko se mein par bhi".split(" "),
+  "hai hain kya mujhe chahiye chahte kitna kitne kitni nahi nahin haan han ji bhai gaadi gadi kab aap aapka mera meri naam karna karni hoga hogi kaise kaisa kal aaj abhi wala wali lena leni dena batao bataiye bolo theek thik accha acha matlab paisa paise lakh kharidna khareedna dekhna chalega milega sakte sakta sakti baje bas dhanyavaad shukriya subah shaam raat dopahar gaadi naya nayi purana purani hum main ka ki ke ko se mein par bhi".split(" "),
 );
 const KANNADA_ROMAN = new Set("beku illa howdu houdu yenu enu nanage nange swalpa gottilla banni madi maadi hegide yaavaga elli bekagide sari ide".split(" "));
 // Words that are Hinglish-ambiguous in English sentences; don't count them alone.
