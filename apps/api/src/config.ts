@@ -15,7 +15,7 @@ const envSchema = z.object({
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
 
   // Data / infra
-  DATA_BACKEND: z.enum(["firestore", "memory", "neon"]).default("memory"),
+  DATA_BACKEND: z.enum(["firestore", "memory"]).default("memory"),
   MEMORY_DB_FILE: z.string().default(".data/db.json"),
   QUEUE_BACKEND: z.enum(["bullmq", "memory"]).default("memory"),
   REDIS_URL: z.string().default("redis://localhost:6379"),
@@ -88,9 +88,6 @@ const envSchema = z.object({
   COST_LLM_INPUT_PER_MTOK: z.coerce.number().default(336), // $4 * 84
   COST_LLM_OUTPUT_PER_MTOK: z.coerce.number().default(1680), // $20 * 84
   COST_MESSAGE: z.coerce.number().default(0.35),
-
-  // Database
-  NEON_DATABASE_URL: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
