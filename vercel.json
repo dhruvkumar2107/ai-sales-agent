@@ -1,0 +1,36 @@
+{
+  "projectName": "axo-voice-auto",
+  "frameworkVersion": "next16",
+  "buildCommand": "pnpm install && pnpm run build",
+  "installCommand": "pnpm install",
+  "rootDirectory": ".",
+  "functions": {
+    "apps/api/src/routes/**/*.ts": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "routes": {
+    "/api/(.*)": {
+      "source": "/api/$1",
+      "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "dest": "apps/api/src/routes/$1"
+    },
+    "/ws/call": {
+      "statusCode": 200,
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": JSON.stringify({
+        "error": "WebSocket not supported in Vercel serverless",
+        "suggestion": "Use /api/health endpoint or deploy WebSocket on Railway/Render"
+      }
+    },
+    "/:all*": {
+      "source": "/:all*",
+      "headers": {
+        "permanent": true
+      },
+      "redirect": "/$1"
+    }
+  }
+}
