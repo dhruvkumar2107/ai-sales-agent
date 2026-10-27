@@ -3,7 +3,7 @@ import IORedis from "ioredis";
 import { env } from "../config";
 import { logger } from "../lib/logger";
 
-export type JobName = "outbound-call" | "send-message" | "reminder-scan" | "lead-followup" | "campaign-contact";
+export type JobName = "outbound-call" | "send-message" | "reminder-scan" | "lead-followup" | "campaign-tick" | "retention-purge";
 
 export interface JobOptions {
   delayMs?: number;

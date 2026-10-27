@@ -4,6 +4,7 @@ import formbody from "@fastify/formbody";
 import rateLimit from "@fastify/rate-limit";
 import { env } from "./config";
 import { logger } from "./lib/logger";
+import { campaignRoutes } from "./routes/campaigns";
 import { dashboardRoutes } from "./routes/dashboard";
 import { attachMediaServer } from "./routes/media";
 import { setupRoutes } from "./routes/setup";
@@ -23,6 +24,7 @@ export async function buildServer() {
   await setupRoutes(app);
   await telephonyRoutes(app);
   await dashboardRoutes(app);
+  await campaignRoutes(app);
   attachMediaServer(app);
 
   app.setErrorHandler((err, req, reply) => {
