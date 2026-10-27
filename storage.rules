@@ -1,0 +1,9 @@
+rules_version = '2';
+// Recordings are AES-256-GCM encrypted by the API and only streamed through authenticated API routes.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

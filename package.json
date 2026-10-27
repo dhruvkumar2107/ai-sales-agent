@@ -1,0 +1,19 @@
+{
+  "name": "axo-voice-auto",
+  "private": true,
+  "version": "1.0.0",
+  "description": "AXO Voice Auto - multilingual AI voice agent platform for bike and car showrooms in India",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter ./apps/* dev",
+    "build": "pnpm --filter @axo/shared build && pnpm --filter @axo/api build && pnpm --filter @axo/web build",
+    "test": "pnpm --filter @axo/api test",
+    "typecheck": "pnpm -r typecheck",
+    "seed": "pnpm --filter @axo/api seed",
+    "simulate": "pnpm --filter @axo/api simulate",
+    "worker": "pnpm --filter @axo/api worker"
+  }
+}
