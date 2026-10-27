@@ -25,6 +25,7 @@ export function calculateEmi({ price, downPayment, tenureMonths, annualRate }: E
   const r = annualRate / 12 / 100;
   const emiExact = r === 0 ? loan / tenureMonths : (loan * r * Math.pow(1 + r, tenureMonths)) / (Math.pow(1 + r, tenureMonths) - 1);
   const emi = Math.round(emiExact);
-  const totalPayable = Math.round(emiExact * tenureMonths);
+  // What the customer actually pays: the rounded instalment, every month.
+  const totalPayable = emi * tenureMonths;
   return { loanAmount: Math.round(loan), emi, totalPayable, totalInterest: totalPayable - Math.round(loan) };
 }

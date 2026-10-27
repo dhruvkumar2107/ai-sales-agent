@@ -1,0 +1,90 @@
+# Full stack: API (voice pipeline + REST + media WebSockets), worker (BullMQ jobs), dashboard, Redis.
+#   cp .env.example .env   # fill in keys
+#   docker compose up --build
+# Demo mode (default .env): DATA_BACKEND=memory + QUEUE_BACKEND=memory -> jobs run inside the API, the worker exits.
+# Production: DATA_BACKEND=firestore + QUEUE_BACKEND=bullmq -> the worker runs campaigns/reminders from Redis.
+# Dashboard: http://localhost:3000   API: http://localhost:4000
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-memory}
+      REDIS_URL: redis://redis:6379
+      MEMORY_DB_FILE: /app/.data/db.json
+      RECORDINGS_DIR: /app/.data/recordings
+    ports:
+      - "4000:4000"
+    volumes:
+      - api-data:/app/.data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/worker.js"]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-memory}
+      REDIS_URL: redis://redis:6379
+      MEMORY_DB_FILE: /app/.data/db.json
+      RECORDINGS_DIR: /app/.data/recordings
+    volumes:
+      - api-data:/app/.data
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Exits cleanly (no restart) when QUEUE_BACKEND=memory.
+    restart: on-failure
+
+  # One-off: docker compose run --rm seed
+  seed:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/seed.js"]
+    env_file: .env
+    environment:
+      MEMORY_DB_FILE: /app/.data/db.json
+    volumes:
+      - api-data:/app/.data
+    profiles: ["tools"]
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_AUTH_MODE: ${NEXT_PUBLIC_AUTH_MODE:-dev}
+        NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
+        NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  api-data:

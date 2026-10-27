@@ -6,7 +6,8 @@ export interface ScoreInput extends LeadFields {
   utterances?: string[];
 }
 
-const BUY_NOW = /(want|going|ready) to buy|buy (it )?today|book(ing)? (it )?today|visiting (the showroom )?today|coming (to the showroom )?today|aaj (hi )?(khareed|lena|book|aa raha|aa rahi|aaunga|aaungi)|आज (ही )?(खरीद|आ)|ಇಂದು (ಖರೀದಿ|ಬರುತ್ತೇನೆ)/i;
+// Hindi/Hinglish allow a couple of words between "aaj" and the verb ("aaj showroom aa raha hoon").
+const BUY_NOW = /(want|going|ready) to buy|buy (it )?today|book(ing)? (it )?today|visiting (the showroom )?today|coming (to the showroom )?today|aaj( \S+){0,2} (khareed|lena|book|aa raha|aa rahi|aaunga|aaungi|aa jaunga)|आज( \S+){0,2} (खरीद|आ रहा|आ रही|आऊंगा|आऊँगा)|ಇಂದು( \S+){0,2} (ಖರೀದಿ|ಬರುತ್ತೇನೆ)/i;
 
 /**
  * Transparent points-based lead score (0-100):

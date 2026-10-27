@@ -53,14 +53,18 @@ const ANALYSIS_SCHEMA = {
   },
 };
 
-/** Merge structured fields captured by save_lead tool calls during the call. */
+/** Merge structured fields captured by tool calls (save_lead, bookings) during the call. */
 function fieldsFromTools(transcript: TranscriptEntry[]): LeadFields {
   const merged: LeadFields = {};
   for (const t of transcript) {
-    if (t.role !== "tool" || t.tool !== "save_lead") continue;
+    if (t.role !== "tool") continue;
     try {
-      const { input } = JSON.parse(t.text) as { input?: { fields?: LeadFields } };
-      Object.assign(merged, input?.fields ?? {});
+      const { input } = JSON.parse(t.text) as { input?: Record<string, unknown> & { fields?: LeadFields } };
+      if (!input) continue;
+      if (t.tool === "save_lead") Object.assign(merged, input.fields ?? {});
+      if (t.tool === "book_testdrive" || t.tool === "get_model_details") merged.interestedModel ??= input.model as string | undefined;
+      if (t.tool === "book_testdrive" || t.tool === "book_service") merged.name ??= input.customer_name as string | undefined;
+      if (t.tool === "book_testdrive" && input.variant) merged.variant ??= input.variant as string;
     } catch {
       /* truncated entry */
     }
