@@ -9,6 +9,7 @@ import {
   orgSettingsSchema,
   testDriveVehicleSchema,
 } from "@axo/shared";
+import { AGENT_TEMPLATES } from "../../prompts/agents";
 import { authenticate, HttpError, MANAGERS, orgOf, requireAuth } from "../auth/auth";
 import { global, newId, nowIso, repo } from "../db/repo";
 import { parseCatalogCsv } from "../integrations/csv-import";
@@ -86,6 +87,8 @@ export async function setupRoutes(app: FastifyInstance) {
   crudRoutes(app, { path: "/api/test-drive-vehicles", collection: "testDriveVehicles", schema: testDriveVehicleSchema, idPrefix: "tdv_" });
   crudRoutes(app, { path: "/api/agents", collection: "agents", schema: agentConfigSchema, idPrefix: "ag_", writeRoles: ["owner"] });
   crudRoutes(app, { path: "/api/customer-vehicles", collection: "customerVehicles", schema: customerVehicleSchema, idPrefix: "cv_" });
+
+  app.get("/api/agent-templates", { preHandler: requireAuth() }, async (req) => AGENT_TEMPLATES.map((t) => ({ ...t, orgId: orgOf(req) })));
 
   // When agents get phone numbers, keep the inbound routing table in sync.
   app.addHook("onResponse", async (req, reply) => {
