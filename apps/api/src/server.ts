@@ -5,6 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import { env } from "./config";
 import { logger } from "./lib/logger";
 import { setupRoutes } from "./routes/setup";
+import { setupVoiceWebSocket } from "./routes/voice.ws";
 
 export async function buildServer() {
   const app: FastifyInstance = Fastify({ logger: logger as unknown as FastifyBaseLogger, trustProxy: true, bodyLimit: 10 * 1024 * 1024 });
@@ -18,6 +19,9 @@ export async function buildServer() {
   app.get("/health", async () => ({ ok: true, time: new Date().toISOString() }));
 
   await setupRoutes(app);
+  
+  // Voice WebSocket endpoint for bidirectional media streams
+  setupVoiceWebSocket(app);
 
   app.setErrorHandler((err, req, reply) => {
     const status = (err as { statusCode?: number }).statusCode ?? 500;

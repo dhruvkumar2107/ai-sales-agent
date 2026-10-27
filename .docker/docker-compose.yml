@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  api:
+    build: ./apps/api
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - DATA_BACKEND=memory
+      - QUEUE_BACKEND=memory
+      - AUTH_MODE=dev
+      - LLM_PROVIDER=mock
+      - STT_PROVIDER=mock
+      - TTS_PROVIDER=mock
+      - TELEPHONY_PROVIDER=mock
+    volumes:
+      - ./apps/api:/app
+      - ./.env:/app/.env
+    depends on:
+      - redis
+
+  redis:
+    image: "redis:7-alpine"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data/redis
+
+  worker:
+    build: ./apps/api
+    command: pnpm worker
+    environment:
+      - DATA_BACKEND=memory
+      - QUEUE_BACKEND=bullmq
+      - REDIS_URL=redis://redis:6379
+      - AUTH_MODE=dev
+      - LLM_PROVIDER=mock
+      - STT_PROVIDER=mock
+      - TTS_PROVIDER=mock
+      - TELEPHONY_PROVIDER=mock
+    volumes:
+      - ./apps/api:/app
+    depends on:
+      - redis
+
+volumes:
+  redis_data:
