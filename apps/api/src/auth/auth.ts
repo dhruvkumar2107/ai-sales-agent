@@ -14,7 +14,6 @@ export interface AuthContext {
 declare module "fastify" {
   interface FastifyRequest {
     auth?: AuthContext;
-    callSid?: string;
   }
 }
 
@@ -35,6 +34,12 @@ export async function authenticate(req: FastifyRequest): Promise<AuthContext> {
   }
   const header = req.headers.authorization ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : (req.query as Record<string, string>)?.token;
+  return verifyToken(token, req.headers["x-dev-role"] as Role | undefined);
+}
+
+/** Verify a Firebase ID token (or accept anything in dev mode). Shared by HTTP and WebSocket auth. */
+export async function verifyToken(token: string | undefined, devRole?: Role): Promise<AuthContext> {
+  if (env.AUTH_MODE === "dev") return { uid: "dev-user", email: "dev@axo.local", orgId: env.DEV_ORG_ID, role: devRole ?? "owner" };
   if (!token) throw new HttpError(401, "Missing bearer token");
   let decoded;
   try {
