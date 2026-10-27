@@ -11,3 +11,7 @@ coverage
 *.tsbuildinfo
 service-account*.json
 recordings/
+
+.vercel
+.env*
+!.env.example

@@ -1,0 +1,9 @@
+# Railway: deploys the API (voice pipeline, REST, media WebSockets) from its Dockerfile.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/api/Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"

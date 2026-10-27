@@ -21,6 +21,8 @@ const envSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   AUTH_MODE: z.enum(["firebase", "dev"]).default("dev"),
   DEV_ORG_ID: z.string().default("demo-org"),
+  /** Hosted demos: seed the demo dealership on first start when the database is empty */
+  SEED_DEMO_ON_START: bool,
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_CLIENT_EMAIL: z.string().optional(),
   FIREBASE_PRIVATE_KEY: z.string().optional(),

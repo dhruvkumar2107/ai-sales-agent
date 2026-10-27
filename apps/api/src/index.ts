@@ -1,5 +1,6 @@
 import { env } from "./config";
 import { liveSessions } from "./calls/live";
+import { global } from "./db/repo";
 import { getStore } from "./db/store";
 import { logger } from "./lib/logger";
 import { startEventWiring, startJobs } from "./queue/handlers";
@@ -7,6 +8,11 @@ import { jobQueue } from "./queue";
 import { buildServer } from "./server";
 
 async function main() {
+  if (env.SEED_DEMO_ON_START && !(await global.orgs().get(env.DEV_ORG_ID))) {
+    const { seedDemo } = await import("./demo/seed-demo");
+    await seedDemo(env.DEV_ORG_ID);
+    logger.info(`seeded demo dealership "${env.DEV_ORG_ID}"`);
+  }
   const app = await buildServer();
   startEventWiring();
   // With the in-memory queue, jobs run inside the API process; with BullMQ a separate worker runs them.
