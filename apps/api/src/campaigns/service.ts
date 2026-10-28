@@ -115,6 +115,9 @@ async function dialContact(orgId: string, campaign: Campaign, contact: CampaignC
     await r.campaignContacts.update(contact.id, { status: "pending", attempts: contact.attempts, nextAttemptAt: res.until });
   } else if (res.status === "blocked") {
     await r.campaignContacts.update(contact.id, { status: res.reason === "opted_out" ? "opted_out" : "skipped_dnd" });
+  } else if (res.status === "not_allowed") {
+    // Paused by the platform owner (limit / switch): retry later without using up an attempt.
+    await r.campaignContacts.update(contact.id, { status: "pending", attempts: contact.attempts, nextAttemptAt: new Date(Date.now() + 3600_000).toISOString() });
   } else {
     await onAttemptFinished(orgId, campaign.id, contact.id, "failed");
   }

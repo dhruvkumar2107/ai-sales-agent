@@ -9,7 +9,9 @@ import { trackSession } from "../calls/live";
 import { pendingCalls } from "../calls/outbound";
 import { env } from "../config";
 import { global } from "../db/repo";
+import { bus, type DomainEvents } from "../lib/events";
 import { logger } from "../lib/logger";
+import { checkCallAllowed } from "../platform/usage";
 import { normalizePhone } from "../lib/mask";
 import { telephony } from "../providers/telephony";
 import { CallSession, type CallSessionOptions, type CallTransport } from "../voice/session";
@@ -57,6 +59,11 @@ async function resolveContext(p: Record<string, string | undefined>): Promise<St
 }
 
 async function startSession(ctx: StreamContext, transport: CallTransport, provider: string, providerCallId: string) {
+  // Outbound calls were checked when placed; inbound calls are checked here (Exotel has no pre-answer hook).
+  if (ctx.direction === "inbound") {
+    const gate = await checkCallAllowed(ctx.orgId, "inbound");
+    if (!gate.ok) throw new Error(`inbound call not allowed: ${gate.reason}`);
+  }
   const session = new CallSession({
     orgId: ctx.orgId,
     agentId: ctx.agentId,
@@ -187,12 +194,14 @@ function handleExotel(ws: WebSocket, query: URLSearchParams) {
 async function handleConsole(ws: WebSocket, query: URLSearchParams) {
   let auth;
   try {
-    auth = await verifyToken(query.get("token") ?? undefined);
+    auth = await verifyToken(query.get("token") ?? undefined, { adminKey: query.get("adminKey") ?? undefined, actAsOrg: query.get("actAs") ?? undefined });
   } catch {
     ws.close(4401, "unauthorized");
     return;
   }
   if (!auth.orgId) return ws.close(4403, "no organisation");
+  const gate = await checkCallAllowed(auth.orgId, "web");
+  if (!gate.ok && !auth.superAdmin) return ws.close(4403, gate.reason);
   const textMode = query.get("mode") === "text";
   const send = (obj: unknown) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(obj));
   const transport: CallTransport = {
@@ -232,7 +241,15 @@ async function handleConsole(ws: WebSocket, query: URLSearchParams) {
       /* ignore */
     }
   });
-  ws.on("close", () => void session.end("dropped", { hangup: false }));
+  // Show WhatsApp/SMS the agent sends during (and right after) the test call.
+  const onMessage = ({ message }: DomainEvents["message.logged"]) => {
+    if (message.callId === session.callId && message.direction === "out") send({ type: "message", channel: message.channel, body: message.body, status: message.status, audience: message.audience, error: message.error });
+  };
+  bus.on("message.logged", onMessage);
+  ws.on("close", () => {
+    bus.off("message.logged", onMessage);
+    void session.end("dropped", { hangup: false });
+  });
   send({ type: "started", callId: session.callId });
   await session.start().catch((err) => {
     logger.error({ err }, "console session failed");

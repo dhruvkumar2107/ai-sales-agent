@@ -6,6 +6,7 @@ import {
   customerVehicleSchema,
   memberSchema,
   offerSchema,
+  orgSchema,
   orgSettingsSchema,
   testDriveVehicleSchema,
 } from "@axo/shared";
@@ -55,15 +56,14 @@ export async function setupRoutes(app: FastifyInstance) {
 
     const body = (req.body ?? {}) as { dealershipName?: string; showroomName?: string; name?: string };
     const orgId = newId("org_");
-    await global.orgs().set({
-      id: orgId,
-      name: body.dealershipName ?? "My Dealership",
-      showroomName: body.showroomName ?? body.dealershipName ?? "My Showroom",
-      brands: [],
-      timezone: "Asia/Kolkata",
-      createdAt: nowIso(),
-      plan: "trial",
-    });
+    await global.orgs().set(
+      orgSchema.parse({
+        id: orgId,
+        name: body.dealershipName ?? "My Dealership",
+        showroomName: body.showroomName ?? body.dealershipName ?? "My Showroom",
+        createdAt: nowIso(),
+      }),
+    );
     const member = memberSchema.parse({ id: auth.uid, orgId, email: auth.email, name: body.name ?? auth.email, role: "owner", createdAt: nowIso() });
     await global.users().set(member);
     await repo(orgId).members.set(member);
@@ -74,8 +74,9 @@ export async function setupRoutes(app: FastifyInstance) {
   app.patch("/api/org", { preHandler: requireAuth("owner") }, async (req) => {
     const orgId = orgOf(req);
     const cur = await global.orgs().get(orgId);
-    const body = req.body as { name?: string; showroomName?: string; brands?: string[] };
-    const next = { ...cur!, ...body, id: orgId };
+    // Only profile fields: plan, status and platform controls belong to the admin panel.
+    const { name, showroomName, brands } = (req.body ?? {}) as { name?: string; showroomName?: string; brands?: string[] };
+    const next = { ...cur!, ...(name ? { name } : {}), ...(showroomName ? { showroomName } : {}), ...(brands ? { brands } : {}), id: orgId };
     await global.orgs().set(next);
     return next;
   });

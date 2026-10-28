@@ -1,9 +1,10 @@
 "use client";
 
-import { BarChart3, CalendarDays, Headphones, LayoutDashboard, LogOut, Megaphone, Moon, PhoneCall, Settings, Sun, Users, Wand2 } from "lucide-react";
+import { BarChart3, CalendarDays, Headphones, LayoutDashboard, LogOut, Megaphone, MessageCircle, Moon, PhoneCall, Settings, Shield, Sun, Users, Wand2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { adminSession } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { cn, humanize } from "@/lib/utils";
 import { Button } from "./ui";
@@ -13,6 +14,7 @@ const NAV = [
   { href: "/leads", label: "Leads", icon: Users },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
   { href: "/calls", label: "Call logs", icon: PhoneCall },
+  { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone, roles: ["owner", "sales_manager", "service_advisor"] },
   { href: "/analytics", label: "Analytics", icon: BarChart3, roles: ["owner", "sales_manager"] },
   { href: "/console", label: "Test console", icon: Headphones },
@@ -75,6 +77,13 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           ))}
         </nav>
+        {me.superAdmin && (
+          <div className="px-3 pb-2">
+            <Link href="/admin" className="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-primary hover:bg-accent">
+              <Shield className="h-4 w-4" /> Admin panel
+            </Link>
+          </div>
+        )}
         <div className="border-t p-3">
           <p className="truncate px-2 text-xs text-muted-foreground">{me.email}</p>
           <p className="px-2 text-xs text-muted-foreground">{humanize(me.role ?? "")}</p>
@@ -89,6 +98,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
+        {me.actingAs && (
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-primary px-4 py-2 text-sm text-primary-foreground">
+            <span>
+              Admin view: you are seeing <strong>{me.org?.showroomName}</strong>&apos;s dashboard with full owner access.
+            </span>
+            <button
+              className="rounded border border-primary-foreground/40 px-2 py-0.5 text-xs hover:bg-primary-foreground/10"
+              onClick={() => {
+                adminSession.setActAs("");
+                window.location.href = "/admin";
+              }}
+            >
+              Back to admin panel
+            </button>
+          </div>
+        )}
         <header className="flex items-center gap-2 overflow-x-auto border-b px-4 py-2 md:hidden">
           {NAV.map((n) => (
             <Link key={n.href} href={n.href} className={cn("whitespace-nowrap rounded-md px-2 py-1 text-xs", pathname.startsWith(n.href) ? "bg-accent text-accent-foreground" : "text-muted-foreground")}>

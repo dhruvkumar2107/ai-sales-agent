@@ -29,6 +29,8 @@ const RX = {
   yes: /\b(yes|yeah|sure|ok|okay|haan|han|ha|ji|theek|chalega|sari|houdu)\b|हाँ|हां|ठीक|ಹೌದು/i,
   done: /that'?s all|nothing else|no thanks|bye\b|thank you|thanks|bas itna|dhanyavaad|शुक्रिया|धन्यवाद|ಧನ್ಯವಾದ/i,
   greetingOnly: /^(hi|hello|hey|namaste|namaskar|हेलो|नमस्ते)[\s.!]*$/i,
+  sendWa: /whats ?app|\bsend\b.*\b(details|brochure|location|address|price|map)\b|bhej|भेज/i,
+  location: /location|address|\bmap\b|where is|kahan hai|kaha hai|पता|लोकेशन/i,
 };
 
 const t = (lang: Lang, en: string, hi: string) => (lang === "hi" ? hi : en);
@@ -184,6 +186,13 @@ export class MockLlm implements LlmProvider {
       };
     }
 
+    // "Send it on WhatsApp": details of the model being discussed, or the showroom location.
+    if (RX.sendWa.test(last)) {
+      if (RX.location.test(last)) return { text: "", tools: [{ name: "send_whatsapp_or_sms", input: { template: "showroom_location", variables: {} } }] };
+      if (!ent.model) return { text: t(lang, "Sure! Which model should I send the details for?", "Zaroor! Kis model ki details bhejoon?"), tools: [] };
+      return { text: "", tools: [{ name: "send_whatsapp_or_sms", input: { template: "model_details", variables: { model: ent.model } } }] };
+    }
+
     if (RX.done.test(last) && texts.length > 1) {
       const outcome = called.has("book_testdrive") ? "test_drive_booked" : called.has("book_service") ? "service_booked" : called.has("save_lead") ? "lead_captured" : called.has("create_ticket") ? "complaint_logged" : "info_provided";
       return { text: t(lang, "Thank you for calling. Have a wonderful day!", "Call karne ke liye dhanyavaad. Aapka din shubh ho!"), tools: [{ name: "end_call", input: { outcome } }] };
@@ -307,6 +316,9 @@ export class MockLlm implements LlmProvider {
         return { text: t(lang, "Thank you for your feedback! Have a great day.", "Aapke feedback ke liye dhanyavaad! Aapka din shubh ho."), tools: [{ name: "end_call", input: { outcome: "feedback_recorded" } }] };
       case "end_call":
         return { text: "", tools: [] };
+      case "send_whatsapp_or_sms":
+        if (!res.sent) return { text: t(lang, "Sorry, I couldn't send that right now. Our team will share it with you.", "Maaf kijiye, abhi bhej nahi paayi. Team aapko bhej degi."), tools: [] };
+        return { text: t(lang, "Done, I've sent it to you on WhatsApp. Anything else I can help with?", "Ho gaya, maine WhatsApp par bhej diya hai. Aur kuch madad chahiye?"), tools: [] };
       default:
         return { text: t(lang, "Done. Anything else I can help you with?", "Ho gaya. Aur kuch madad chahiye?"), tools: [] };
     }

@@ -9,7 +9,9 @@ import { lookupJobCard, lookupVehicleBookings, pushDmsEvent } from "../integrati
 import { bus } from "../lib/events";
 import { normalizePhone } from "../lib/mask";
 import { upsertLead } from "../leads/service";
-import { renderTemplate, sendMessage, type TemplateName } from "../providers/messaging";
+import { locationVars, modelDetailsVars } from "../messaging/content";
+import { sendOrgMessage } from "../messaging/service";
+import type { TemplateName } from "../providers/messaging";
 import { jobQueue } from "../queue";
 import { findModel, searchCatalog } from "./catalog";
 import { calculateEmi } from "./emi";
@@ -31,14 +33,19 @@ async function pickBranch(ctx: ToolContext, kind: "sales" | "service", branchId?
 async function notify(ctx: ToolContext, phone: string, template: TemplateName, vars: Record<string, string | undefined>) {
   const settings = await ctx.repo.settings();
   const channel = settings.messaging.channel === "sms" ? "sms" : "whatsapp";
-  const res = await sendMessage(phone, renderTemplate(template, vars, ctx.language), channel);
+  const base = { orgId: ctx.orgId, to: phone, template, vars, language: ctx.language, callId: ctx.callId };
+  const res = await sendOrgMessage({ ...base, channel });
   if (res.ok) ctx.countMessage();
   if (settings.messaging.channel === "both") {
-    const sms = await sendMessage(phone, renderTemplate(template, vars, ctx.language), "sms");
+    const sms = await sendOrgMessage({ ...base, channel: "sms" });
     if (sms.ok) ctx.countMessage();
   }
   return res.ok;
 }
+
+/** Staff heads-up (hot lead / callback due) by SMS; logged as an internal message. */
+const alertStaff = (ctx: ToolContext, to: string, vars: Record<string, string | undefined>) =>
+  sendOrgMessage({ orgId: ctx.orgId, to, channel: "sms", template: "exec_hot_lead", vars, callId: ctx.callId, audience: "internal" });
 
 // ---------------------------------------------------------------- catalog
 
@@ -191,7 +198,7 @@ export const bookTestDrive = defineTool({
     const confirmationSent = await notify(ctx, phone, "testdrive_confirmation", vars);
     const reminderAt = start.getTime() - 2 * 3600_000;
     if (reminderAt > Date.now()) {
-      await jobQueue().add("send-message", { orgId: ctx.orgId, to: phone, body: renderTemplate("testdrive_reminder", vars, ctx.language) }, { delayMs: reminderAt - Date.now(), jobId: `td-reminder:${td.id}` });
+      await jobQueue().add("send-message", { orgId: ctx.orgId, to: phone, template: "testdrive_reminder", vars, language: ctx.language }, { delayMs: reminderAt - Date.now(), jobId: `td-reminder:${td.id}` });
     }
     bus.emitEvent("testdrive.booked", { orgId: ctx.orgId, testDriveId: td.id });
     void pushDmsEvent(ctx.orgId, "testdrive.booked", td);
@@ -336,23 +343,29 @@ export const lookupJobCardTool = defineTool({
 
 export const sendWhatsappOrSms = defineTool({
   name: "send_whatsapp_or_sms",
-  description: "Send the caller a message: brochure link, showroom location, or callback notice.",
+  description:
+    "Send the caller a WhatsApp message. Use it whenever the caller asks you to send something on WhatsApp, or agrees when you offer: model_details (variants, on-road price range, features, brochure link) or brochure need variables.model; showroom_location sends address, map link and timings (variables.branch optional). Only say it's sent after this returns sent: true.",
   schema: z.object({
-    template: z.enum(["brochure", "callback_notice", "testdrive_confirmation", "service_confirmation"]),
+    template: z.enum(["model_details", "brochure", "showroom_location", "callback_notice", "testdrive_confirmation", "service_confirmation"]),
     phone: z.string().optional(),
-    variables: z.record(z.string()).optional().describe("e.g. { model: 'Creta' }"),
+    variables: z.record(z.string()).optional().describe("e.g. { model: 'Creta' } or { branch: 'Indiranagar' }"),
   }),
   async run(input, ctx) {
     const phone = normalizePhone(input.phone || ctx.callerPhone);
-    const vars: Record<string, string | undefined> = { showroom: ctx.org.showroomName, ...input.variables };
-    if (input.template === "brochure") {
+    let vars: Record<string, string | undefined> = { showroom: ctx.org.showroomName, ...input.variables };
+    if (input.template === "brochure" || input.template === "model_details") {
       const m = findModel(await ctx.repo.catalog.list(), input.variables?.model ?? "");
-      if (!m?.brochureUrl) return { sent: false, note: "No brochure configured for that model." };
-      vars.model = m.model;
-      vars.link = m.brochureUrl;
+      if (!m) return { sent: false, note: "Which model? Ask the caller, then try again." };
+      if (input.template === "brochure" && !m.brochureUrl) return { sent: false, note: "No brochure configured for that model; offer model_details instead." };
+      vars = { ...vars, ...modelDetailsVars(m, ctx.org.showroomName) };
+    }
+    if (input.template === "showroom_location") {
+      const branch = await pickBranch(ctx, ctx.agent.kind === "service" ? "service" : "sales", input.variables?.branch, input.variables?.model);
+      if (!branch) return { sent: false, note: "No branch configured." };
+      vars = { ...vars, ...locationVars(branch, ctx.org.showroomName) };
     }
     const sent = await notify(ctx, phone, input.template, vars);
-    return { sent };
+    return sent ? { sent, note: "Tell the caller it has been sent on WhatsApp." } : { sent, note: "Sending failed. Apologise and say the team will share it." };
   },
 });
 
@@ -398,14 +411,14 @@ export const transferToHuman = defineTool({
     if (target && ctx.canTransfer) {
       ctx.actions.transfer = { number: target.number, to: target.name, department: input.department };
       // Heads-up message so the executive has context when they pick up.
-      await sendMessage(target.number, renderTemplate("exec_hot_lead", { name: callerName, phone: ctx.callerPhone, model: lead?.interestedModel ?? "-", reason: input.reason }), "sms");
+      await alertStaff(ctx, target.number, { name: callerName, phone: ctx.callerPhone, model: lead?.interestedModel ?? "-", reason: input.reason });
       return { transferred: true, to: target.name, note: "Tell the caller you're connecting them now." };
     }
 
     const assignee = preferred ?? candidates[0];
     const dueAt = new Date(Date.now() + (input.priority === "instant" ? 5 : input.priority === "high" ? 30 : 240) * 60_000).toISOString();
     await ctx.repo.callbacks.set({ id: newId("cb_"), orgId: ctx.orgId, phone: normalizePhone(ctx.callerPhone), customerName: lead?.name, department: input.department, reason: input.reason, priority: input.priority, assignedTo: assignee?.id, dueAt, status: "pending", callId: ctx.callId, createdAt: nowIso() });
-    if (assignee?.phone) await sendMessage(assignee.phone, renderTemplate("exec_hot_lead", { name: callerName, phone: ctx.callerPhone, model: lead?.interestedModel ?? "-", reason: `${input.reason} (callback due)` }), "sms");
+    if (assignee?.phone) await alertStaff(ctx, assignee.phone, { name: callerName, phone: ctx.callerPhone, model: lead?.interestedModel ?? "-", reason: `${input.reason} (callback due)` });
     await notify(ctx, ctx.callerPhone, "callback_notice", { showroom: ctx.org.showroomName, department: input.department });
     return { transferred: false, callbackScheduled: true, withinMinutes: input.priority === "instant" ? 5 : input.priority === "high" ? 30 : 240, note: "Tell the caller warmly that a person will call back shortly." };
   },

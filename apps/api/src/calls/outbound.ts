@@ -4,6 +4,7 @@ import { getStore } from "../db/store";
 import { newId, nowIso, repo } from "../db/repo";
 import { logger } from "../lib/logger";
 import { maskPhone, normalizePhone } from "../lib/mask";
+import { checkCallAllowed } from "../platform/usage";
 import { telephony, type PendingCall } from "../providers/telephony";
 
 export const pendingCalls = () => getStore().collection<PendingCall>("pendingCalls");
@@ -26,12 +27,19 @@ export interface OutboundRequest {
 export type OutboundResult =
   | { status: "placed"; callId: string; providerCallId: string }
   | { status: "blocked"; reason: Exclude<BlockReason, null> }
+  /** Stopped by the platform owner's controls (suspended, feature off, monthly limit) */
+  | { status: "not_allowed"; reason: string }
   | { status: "deferred"; until: string }
   | { status: "failed"; error: string };
 
 /** Compliance-checked outbound call. Media-stream start looks the context up by callId. */
 export async function placeOutboundCall(req: OutboundRequest): Promise<OutboundResult> {
   const to = normalizePhone(req.to);
+  const gate = await checkCallAllowed(req.orgId, req.campaignType && req.campaignId ? "campaign" : "outbound");
+  if (!gate.ok) {
+    logger.info({ orgId: req.orgId, reason: gate.reason }, "outbound call not allowed");
+    return { status: "not_allowed", reason: gate.reason };
+  }
   const blocked = await checkCallable(req.orgId, to, { allowTransactional: !req.campaignType || TRANSACTIONAL_CAMPAIGNS.has(req.campaignType) });
   if (blocked) return { status: "blocked", reason: blocked };
 

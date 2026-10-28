@@ -1,4 +1,4 @@
-import { agentConfigSchema, branchSchema, memberSchema, type Branch, type Member } from "@axo/shared";
+import { agentConfigSchema, branchSchema, memberSchema, orgSchema, type Branch, type Member } from "@axo/shared";
 import { AGENT_TEMPLATES } from "../../prompts/agents";
 import { global, nowIso, repo } from "../db/repo";
 import { parseCatalogCsv } from "../integrations/csv-import";
@@ -67,15 +67,17 @@ export const DEMO_MEMBERS: Omit<Member, "orgId" | "createdAt">[] = [
 export async function installDemoOrg(orgId = DEMO_ORG_ID) {
   const r = repo(orgId);
   const { models } = parseCatalogCsv(orgId, DEMO_CATALOG_CSV);
-  await global.orgs().set({
-    id: orgId,
-    name: "AXO Motors Group",
-    showroomName: "AXO Motors",
-    brands: [...new Set(models.map((m) => m.brand))],
-    timezone: "Asia/Kolkata",
-    createdAt: nowIso(),
-    plan: "growth",
-  });
+  await global.orgs().set(
+    orgSchema.parse({
+      id: orgId,
+      name: "AXO Motors Group",
+      showroomName: "AXO Motors",
+      brands: [...new Set(models.map((m) => m.brand))],
+      createdAt: nowIso(),
+      plan: "growth",
+      platform: { contact: { name: "Demo owner", phone: "+919800000003", email: "owner@axomotors.example" } },
+    }),
+  );
   for (const b of DEMO_BRANCHES) await r.branches.set(branchSchema.parse({ ...b, orgId }));
   for (const m of models) await r.catalog.set(m);
   for (const m of DEMO_MEMBERS) {

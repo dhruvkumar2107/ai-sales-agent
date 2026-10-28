@@ -21,6 +21,10 @@ const envSchema = z.object({
   REDIS_URL: z.string().default("redis://localhost:6379"),
   AUTH_MODE: z.enum(["firebase", "dev"]).default("dev"),
   DEV_ORG_ID: z.string().default("demo-org"),
+  /** Platform owner logins (Firebase mode), comma separated emails */
+  SUPER_ADMIN_EMAILS: z.string().default(""),
+  /** Admin panel key (sent as x-admin-key). Required for the admin panel when AUTH_MODE=dev in production. */
+  ADMIN_KEY: z.string().default(""),
   /** Hosted demos: seed the demo dealership on first start when the database is empty */
   SEED_DEMO_ON_START: bool,
   FIREBASE_PROJECT_ID: z.string().optional(),
@@ -38,7 +42,16 @@ const envSchema = z.object({
   STT_PROVIDER: z.enum(["deepgram", "sarvam", "mock"]).default("deepgram"),
   TTS_PROVIDER: z.enum(["elevenlabs", "sarvam", "mock"]).default("elevenlabs"),
   LLM_PROVIDER: z.enum(["anthropic", "gemini", "mock"]).default("anthropic"),
-  MESSAGING_PROVIDER: z.enum(["twilio", "exotel", "log"]).default("log"),
+  MESSAGING_PROVIDER: z.enum(["twilio", "exotel", "meta", "log"]).default("log"),
+
+  // Meta WhatsApp Cloud API (platform default number; dealers can get their own number id from the admin panel)
+  META_WA_TOKEN: z.string().optional(),
+  META_WA_PHONE_NUMBER_ID: z.string().optional(),
+  META_WA_VERIFY_TOKEN: z.string().default("axo-verify"),
+  META_APP_SECRET: z.string().optional(),
+  META_GRAPH_VERSION: z.string().default("v21.0"),
+  /** Dealership that receives WhatsApp messages sent to the platform default number */
+  WHATSAPP_DEFAULT_ORG_ID: z.string().optional(),
 
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),

@@ -4,16 +4,18 @@ import formbody from "@fastify/formbody";
 import rateLimit from "@fastify/rate-limit";
 import { env } from "./config";
 import { logger } from "./lib/logger";
+import { adminRoutes } from "./routes/admin";
 import { campaignRoutes } from "./routes/campaigns";
 import { dashboardRoutes } from "./routes/dashboard";
 import { attachMediaServer } from "./routes/media";
 import { setupRoutes } from "./routes/setup";
 import { telephonyRoutes } from "./routes/telephony";
+import { whatsappRoutes } from "./routes/whatsapp";
 
 export async function buildServer() {
   const app: FastifyInstance = Fastify({ logger: logger as unknown as FastifyBaseLogger, trustProxy: true, bodyLimit: 10 * 1024 * 1024 });
 
-  await app.register(cors, { origin: env.WEB_ORIGIN.split(","), credentials: true });
+  await app.register(cors, { origin: env.WEB_ORIGIN.split(","), credentials: true, allowedHeaders: ["authorization", "content-type", "x-admin-key", "x-act-as-org", "x-dev-role"] });
   await app.register(formbody);
   await app.register(rateLimit, { max: 300, timeWindow: "1 minute" });
   // Keep the raw body for webhook signature checks and accept CSV uploads as text.
@@ -25,6 +27,8 @@ export async function buildServer() {
   await telephonyRoutes(app);
   await dashboardRoutes(app);
   await campaignRoutes(app);
+  await whatsappRoutes(app);
+  await adminRoutes(app);
   attachMediaServer(app);
 
   app.setErrorHandler((err, req, reply) => {

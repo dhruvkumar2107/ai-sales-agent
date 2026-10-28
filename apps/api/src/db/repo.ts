@@ -7,12 +7,15 @@ import type {
   Campaign,
   CampaignContact,
   CatalogModel,
+  Conversation,
   CustomerVehicle,
   Lead,
   Member,
+  Message,
   Offer,
   OptOut,
   Org,
+  OrgPlatform,
   OrgSettings,
   ServiceBooking,
   TestDrive,
@@ -20,7 +23,7 @@ import type {
   Ticket,
   VehicleBooking,
 } from "@axo/shared";
-import { orgSettingsSchema } from "@axo/shared";
+import { orgPlatformSchema, orgSettingsSchema } from "@axo/shared";
 import { getStore } from "./store";
 
 export const newId = (prefix = "") => `${prefix}${randomUUID().replace(/-/g, "").slice(0, 20)}`;
@@ -35,7 +38,12 @@ export const global = {
   phoneRoutes: () => getStore().collection<{ id: string; orgId: string; agentId: string }>("phoneRoutes"),
   /** Global DND / NDNC registry cache (synced from operator scrub lists) */
   dnd: () => getStore().collection<{ id: string; phone: string; addedAt: string }>("dnd"),
+  /** Meta WhatsApp phone number id -> org, for routing incoming WhatsApp messages */
+  waRoutes: () => getStore().collection<{ id: string; orgId: string }>("waRoutes"),
 };
+
+/** Platform controls with defaults filled in (orgs created before these existed have none stored). */
+export const platformOf = (org: Pick<Org, "platform"> | null | undefined): OrgPlatform => orgPlatformSchema.parse(org?.platform ?? {});
 
 /** Tenant-scoped repository. All org data lives under orgs/{orgId}/... */
 export function repo(orgId: string) {
@@ -59,6 +67,8 @@ export function repo(orgId: string) {
     campaigns: c<Campaign>("campaigns"),
     campaignContacts: c<CampaignContact>("campaignContacts"),
     optOuts: c<OptOut>("optOuts"),
+    messages: c<Message>("messages"),
+    conversations: c<Conversation>("conversations"),
     settingsCol: c<OrgSettings & { id: string }>("settings"),
     async settings(): Promise<OrgSettings> {
       const s = await this.settingsCol.get("main");

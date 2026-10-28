@@ -8,6 +8,7 @@ import { bus } from "../lib/events";
 import { logger } from "../lib/logger";
 import { normalizePhone } from "../lib/mask";
 import { takeExotelTransfer } from "../providers/telephony/exotel";
+import { checkCallAllowed } from "../platform/usage";
 import { streamTwiml, validateTwilioSignature } from "../providers/telephony/twilio";
 
 
@@ -81,7 +82,13 @@ export async function telephonyRoutes(app: FastifyInstance) {
     const b = req.body as Record<string, string>;
     const to = normalizePhone(b.To ?? "");
     const route = await global.phoneRoutes().get(to);
-    reply.type("text/xml").send(streamTwiml({ orgId: route?.orgId ?? env.DEV_ORG_ID, agentId: route?.agentId, from: b.From, to: b.To, direction: "inbound" }));
+    const orgId = route?.orgId ?? env.DEV_ORG_ID;
+    const gate = await checkCallAllowed(orgId, "inbound");
+    if (!gate.ok) {
+      req.log.info({ orgId, reason: gate.reason }, "inbound call not allowed");
+      return reply.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, this line is not available right now. Please call back later.</Say><Hangup/></Response>`);
+    }
+    reply.type("text/xml").send(streamTwiml({ orgId, agentId: route?.agentId, from: b.From, to: b.To, direction: "inbound" }));
   });
 
   app.post("/telephony/twilio/status", rl, async (req, reply) => {

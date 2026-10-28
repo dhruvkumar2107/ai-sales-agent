@@ -10,6 +10,7 @@ import {
   LEAD_SOURCES,
   LEAD_STAGES,
   PAYMENT_MODES,
+  PLAN_IDS,
   ROLES,
   SERVICE_TYPES,
   TIMELINES,
@@ -32,6 +33,38 @@ export const workingHoursSchema = z.object({
 });
 export type WorkingHours = z.infer<typeof workingHoursSchema>;
 
+/** Controls the platform owner (super admin) sets per dealership. Dealers can read but not change these. */
+export const orgPlatformSchema = z.object({
+  features: z
+    .object({
+      voiceCalls: z.boolean().default(true),
+      outboundCampaigns: z.boolean().default(true),
+      whatsapp: z.boolean().default(true),
+      /** WhatsApp thank-you + details after every answered call */
+      postCallWhatsapp: z.boolean().default(true),
+      /** AI replies to incoming WhatsApp messages */
+      whatsappBot: z.boolean().default(true),
+    })
+    .default({}),
+  /** 0 = unlimited */
+  limits: z.object({ monthlyCalls: z.number().int().min(0).default(0), monthlyMessages: z.number().int().min(0).default(0) }).default({}),
+  whatsapp: z
+    .object({
+      /** Meta WhatsApp Cloud API phone number id; empty = platform default number */
+      phoneNumberId: z.string().default(""),
+      displayNumber: z.string().default(""),
+      /** Our template name -> approved Meta template name, for business-initiated messages */
+      templates: z.record(z.string()).default({}),
+      templateLanguage: z.string().default("en"),
+    })
+    .default({}),
+  contact: z.object({ name: z.string().default(""), phone: z.string().default(""), email: z.string().default("") }).default({}),
+  /** Monthly price override in INR; 0 = plan list price */
+  monthlyPrice: z.number().min(0).default(0),
+  notes: z.string().default(""),
+});
+export type OrgPlatform = z.infer<typeof orgPlatformSchema>;
+
 export const orgSchema = z.object({
   id,
   name: z.string().min(1),
@@ -40,7 +73,9 @@ export const orgSchema = z.object({
   brands: z.array(z.string()).default([]),
   timezone: z.string().default("Asia/Kolkata"),
   createdAt: isoDate,
-  plan: z.enum(["trial", "starter", "growth", "enterprise"]).default("trial"),
+  plan: z.enum(PLAN_IDS).default("trial"),
+  status: z.enum(["active", "suspended"]).default("active"),
+  platform: orgPlatformSchema.default({}),
 });
 export type Org = z.infer<typeof orgSchema>;
 
@@ -502,6 +537,53 @@ export const newLeadWebhookSchema = z.object({
   notes: z.string().optional(),
 });
 export type NewLeadWebhook = z.infer<typeof newLeadWebhookSchema>;
+
+// ---------------------------------------------------------------- WhatsApp / SMS
+
+export const messageSchema = z.object({
+  id,
+  orgId: id,
+  channel: z.enum(["whatsapp", "sms"]),
+  direction: z.enum(["out", "in"]),
+  /** Customer (or staff) number */
+  phone: z.string(),
+  body: z.string(),
+  template: z.string().optional(),
+  status: z.enum(["sent", "logged", "failed", "blocked", "received"]),
+  error: z.string().optional(),
+  providerId: z.string().optional(),
+  callId: z.string().optional(),
+  conversationId: z.string().optional(),
+  /** customer = to/from a customer; internal = staff alert (hot lead etc.) */
+  audience: z.enum(["customer", "internal"]).default("customer"),
+  /** Who wrote it: the AI agent, a staff member from the dashboard, the system (templates), or the customer */
+  author: z.enum(["ai", "staff", "system", "customer"]).default("system"),
+  createdAt: isoDate,
+});
+export type Message = z.infer<typeof messageSchema>;
+
+export const conversationSchema = z.object({
+  id, // wa_<digits>
+  orgId: id,
+  phone: z.string(),
+  customerName: z.string().optional(),
+  agentId: z.string().optional(),
+  leadId: z.string().optional(),
+  /** LLM history (canonical message blocks), trimmed */
+  history: z.array(z.any()).default([]),
+  /** AI answers incoming messages; staff can switch it off to take over */
+  botEnabled: z.boolean().default(true),
+  lastMessageAt: isoDate,
+  /** Last customer message: Meta allows free-form replies within 24 h of it */
+  lastInboundAt: z.string().optional(),
+  lastPreview: z.string().default(""),
+  messageCount: z.number().int().default(0),
+  unread: z.number().int().default(0),
+  /** Summary of the latest phone call, so the chat continues where the call left off */
+  callContext: z.string().optional(),
+  createdAt: isoDate,
+});
+export type Conversation = z.infer<typeof conversationSchema>;
 
 export const catalogCsvRowSchema = z.object({
   brand: z.string().min(1),

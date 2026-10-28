@@ -12,6 +12,36 @@ export async function getToken(): Promise<string> {
   return user.getIdToken();
 }
 
+/** Platform-owner session: admin key (hosted demo) and the dealership being viewed. Stored per browser. */
+const read = (k: string) => {
+  try {
+    return localStorage.getItem(k) ?? "";
+  } catch {
+    return "";
+  }
+};
+const write = (k: string, v: string) => {
+  try {
+    if (v) localStorage.setItem(k, v);
+    else localStorage.removeItem(k);
+  } catch {
+    /* storage unavailable */
+  }
+};
+export const adminSession = {
+  key: () => read("axo.adminKey"),
+  setKey: (v: string) => write("axo.adminKey", v),
+  actAs: () => read("axo.actAs"),
+  setActAs: (orgId: string) => write("axo.actAs", orgId),
+};
+
+function adminHeaders(): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (adminSession.key()) h["x-admin-key"] = adminSession.key();
+  if (adminSession.actAs()) h["x-act-as-org"] = adminSession.actAs();
+  return h;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -23,7 +53,7 @@ export class ApiError extends Error {
 
 export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
   const token = await getToken();
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...((init.headers as Record<string, string>) ?? {}) };
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...adminHeaders(), ...((init.headers as Record<string, string>) ?? {}) };
   let body = init.body;
   if (init.json !== undefined) {
     headers["content-type"] = "application/json";
@@ -69,4 +99,11 @@ export function useApi<T>(path: string | null, opts: { refreshMs?: number } = {}
   return { data, error, loading, reload, setData };
 }
 
-export const wsUrl = (path: string) => API_URL.replace(/^http/, "ws") + path;
+/** WebSocket URL; browsers can't set headers on sockets, so admin credentials go in the query. */
+export const wsUrl = (path: string) => {
+  const extra = new URLSearchParams();
+  if (adminSession.key()) extra.set("adminKey", adminSession.key());
+  if (adminSession.actAs()) extra.set("actAs", adminSession.actAs());
+  const q = extra.toString();
+  return API_URL.replace(/^http/, "ws") + path + (q ? (path.includes("?") ? "&" : "?") + q : "");
+};

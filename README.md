@@ -108,7 +108,27 @@ Twilio / Exotel ──media WS──► transport (mu-law 8k / PCM 8k  ⇄  PCM1
 
 `search_catalog`, `get_model_details`, `calculate_emi`, `check_testdrive_slots`, `book_testdrive`, `check_service_slots`, `book_service`, `save_lead`, `lookup_booking`, `lookup_job_card`, `send_whatsapp_or_sms`, `transfer_to_human`, `create_ticket`, `end_call`, plus `record_opt_out` (instant DND compliance) and `record_feedback` (post-service rating; anything under 3 stars goes to a manager). Each tool has a zod schema (converted to JSON Schema for Claude), a timeout (4 s by default, 6 s for bookings) and a spoken fallback on failure.
 
-**Integrations.** Google Calendar (service-account JWT; booking events), a generic REST **DMS/CRM adapter** (`GET /job-cards`, `GET /bookings`, `POST /events` signed with HMAC; falls back to AXO's own records), CSV catalog import, and WhatsApp/SMS via Twilio or Exotel (`MESSAGING_PROVIDER=log` prints messages instead).
+**Integrations.** Google Calendar (service-account JWT; booking events), a generic REST **DMS/CRM adapter** (`GET /job-cards`, `GET /bookings`, `POST /events` signed with HMAC; falls back to AXO's own records), CSV catalog import, and WhatsApp/SMS via Meta WhatsApp Cloud API, Twilio or Exotel (`MESSAGING_PROVIDER=log` logs messages instead; they still show in the dashboard).
+
+## WhatsApp
+
+- **During a call:** when the caller asks ("send me the Creta details on WhatsApp", "send the location"), the agent calls `send_whatsapp_or_sms` with `model_details` (variants, on-road range, features, brochure, all from the catalog) or `showroom_location` (address, map, timings), and only says "sent" after it succeeds. Bookings send confirmations and reminders as before.
+- **After every answered call:** a thank-you with whatever was discussed (price range + brochure, or the showroom location), skipping anything already sent on the call (`whatsapp/post-call.ts`). The call summary is attached to the customer's WhatsApp thread.
+- **Two-way chatbot:** incoming WhatsApp messages (`/webhooks/whatsapp`) are answered by the same agent, catalog, tools and price guard as calls (`whatsapp/bot.ts`). New chats create a `whatsapp` lead. Staff can read every chat in **WhatsApp**, reply themselves and switch the AI off per chat. `STOP` opts the customer out.
+- **Meta rules:** free text inside 24 h of the customer's last message, otherwise the approved template set per dealership in the admin panel (template variables follow the order of `{placeholders}` in `providers/messaging`).
+- **Demo:** with `MESSAGING_PROVIDER=log`, the **WhatsApp** page has a "Try it as a customer" box, and the test console shows each WhatsApp the agent sends.
+- Every message, sent, failed or blocked, is in the dealership's message log (`messaging/service.ts` is the only send path).
+
+## Admin panel (platform owner)
+
+`/admin` is for you, the business selling the product. Access: emails in `SUPER_ADMIN_EMAILS` (Firebase mode), or the `ADMIN_KEY` entered once in the browser (hosted demo). In local development without a key you are the admin.
+
+- **All dealerships:** calls used vs plan, minutes, WhatsApp sent and chats, leads, revenue (plan + ₹6/call overage), your cost and profit, per month.
+- **Per dealership:** plan and custom price, switches (AI calls, outbound campaigns, WhatsApp, after-call WhatsApp, AI WhatsApp replies), monthly caps on outbound calls and messages, suspend/reactivate, their WhatsApp number (Meta phone number id + token, stored encrypted) and approved templates, contact and private notes, recent calls and messages, team and agents.
+- **Open their dashboard:** view and change anything in a dealership's own dashboard with owner rights (a banner shows you are in admin view).
+- **Add dealership:** creates the account, a starting agent, and an owner invite by email.
+
+Plans live in `packages/shared/src/constants.ts` (`PLANS`). Dealers can read their switches but cannot change plan, status or limits. Suspension locks their dashboard, stops calls and messages. The monthly call cap applies to outbound calls; incoming customer calls are always answered and counted as overage.
 
 ## Call flows → where they live
 
@@ -141,6 +161,7 @@ Pick providers with env vars. A provider that has no credentials falls back to i
 | STT | `deepgram`, `sarvam` | Deepgram nova-3 `multi` covers English, Hindi and Hinglish. **Use Sarvam for Kannada.** |
 | TTS | `elevenlabs`, `sarvam` | ElevenLabs Flash v2.5 (lowest latency). Sarvam bulbul has natural hi/kn voices. Per-language voice IDs are set per agent. |
 | LLM | `anthropic` | Claude with streaming and tool calling. Default `claude-opus-5-5` at `LLM_EFFORT=low`, with server-side refusal fallback. For the lowest latency and cost, set `LLM_MODEL=claude-haiku-5-5`. |
+| WhatsApp / SMS | `meta`, `twilio`, `exotel`, `log` | `meta` = WhatsApp Cloud API (cheapest per message; SMS then goes through Twilio when configured). Each dealership can have its own number. `log` = demo, nothing is delivered. |
 | LLM | `gemini` | Google Gemini over REST (SSE streaming, function calling). `GEMINI_MODEL` plus `GEMINI_FALLBACK_MODELS`, tried in order when a model is overloaded or slow. Free-tier keys can be slow at peak times. |
 
 ## Deployment

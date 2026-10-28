@@ -7,7 +7,19 @@ export type Role = (typeof ROLES)[number];
 export const LEAD_STAGES = ["new", "contacted", "test_drive_booked", "negotiation", "won", "lost"] as const;
 export type LeadStage = (typeof LEAD_STAGES)[number];
 
-export const LEAD_SOURCES = ["inbound_call", "facebook", "instagram", "website", "walk_in", "campaign", "referral", "other"] as const;
+export const LEAD_SOURCES = ["inbound_call", "whatsapp", "facebook", "instagram", "website", "walk_in", "campaign", "referral", "other"] as const;
+
+/** Subscription plans sold to dealerships (INR / month). `calls` = included calls per month. */
+export const PLAN_IDS = ["trial", "starter", "growth", "enterprise"] as const;
+export type PlanId = (typeof PLAN_IDS)[number];
+export const PLANS: Record<PlanId, { label: string; price: number; calls: number; messages: number }> = {
+  trial: { label: "Trial", price: 0, calls: 100, messages: 300 },
+  starter: { label: "Starter", price: 9999, calls: 1000, messages: 3000 },
+  growth: { label: "Growth", price: 19999, calls: 3000, messages: 9000 },
+  enterprise: { label: "Pro", price: 34999, calls: 6000, messages: 18000 },
+};
+/** Charged per call above the plan's included calls */
+export const OVERAGE_PER_CALL = 6;
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
 export const LEAD_SCORES = ["hot", "warm", "cold"] as const;

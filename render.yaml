@@ -20,6 +20,9 @@ services:
         value: dev
       - key: DEV_ORG_ID
         value: demo-org
+      # Key for the admin panel (/admin). You choose it; Render asks for it when syncing the Blueprint.
+      - key: ADMIN_KEY
+        sync: false
       - key: SEED_DEMO_ON_START
         value: "true"
       - key: ENCRYPTION_KEY

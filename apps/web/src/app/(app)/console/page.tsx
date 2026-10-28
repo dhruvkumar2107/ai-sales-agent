@@ -8,9 +8,11 @@ import { api, getToken, useApi, wsUrl } from "@/lib/api";
 import { cn, formatINR2, humanize } from "@/lib/utils";
 
 interface Line {
-  role: "agent" | "caller" | "system";
+  role: "agent" | "caller" | "system" | "whatsapp";
   text: string;
   interrupted?: boolean;
+  /** WhatsApp/SMS lines: delivery status and channel */
+  meta?: string;
 }
 
 /** AudioWorklet: capture mic, downsample to 16 kHz, emit 20 ms Int16 frames. */
@@ -45,6 +47,8 @@ const SAMPLE_LINES: Record<string, string[]> = {
     "11 am please",
     "Yes, please confirm",
     "What would the EMI be for the Creta?",
+    "Please send me the Creta details on WhatsApp",
+    "Send me the showroom location on WhatsApp",
     "I want to exchange my old car for a new Verna",
     "Is the Creta better than the Seltos?",
     "I want to buy the Creta today, I'm visiting the showroom this evening",
@@ -160,6 +164,11 @@ export default function ConsolePage() {
         if (msg.type === "transfer") setLines((l) => [...l, { role: "system", text: `Transfer requested to ${msg.number}. Browser calls can't be bridged, so a callback is scheduled.` }]);
         if (msg.type === "call_summary") setSummary(msg);
         if (msg.type === "ended") setLines((l) => [...l, { role: "system", text: "Call ended by agent." }]);
+        if (msg.type === "message")
+          setLines((l) => [
+            ...l,
+            { role: "whatsapp", text: msg.body, meta: `${msg.audience === "internal" ? "SMS to staff" : msg.channel === "sms" ? "SMS to customer" : "WhatsApp to customer"} · ${msg.status === "logged" ? "demo (not delivered)" : msg.status}${msg.error ? `: ${msg.error}` : ""}` },
+          ]);
         if (msg.type === "error") setError(msg.message);
       };
       ws.onclose = () => {
@@ -255,7 +264,14 @@ export default function ConsolePage() {
                 </p>
               )}
               {lines.map((l, i) =>
-                l.role === "system" ? (
+                l.role === "whatsapp" ? (
+                  <div key={i} className="flex justify-center">
+                    <div className="max-w-[85%] whitespace-pre-wrap rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">
+                      <p className="mb-1 font-medium">{l.meta}</p>
+                      {l.text}
+                    </div>
+                  </div>
+                ) : l.role === "system" ? (
                   <p key={i} className="text-center text-xs text-muted-foreground">
                     {l.text}
                   </p>

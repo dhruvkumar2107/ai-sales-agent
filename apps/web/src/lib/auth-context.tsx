@@ -10,7 +10,11 @@ export interface Me {
   email: string;
   orgId: string | null;
   role: "owner" | "sales_manager" | "sales_executive" | "service_advisor" | null;
-  org: { id: string; name: string; showroomName: string; brands: string[] } | null;
+  org: { id: string; name: string; showroomName: string; brands: string[]; plan?: string; status?: string } | null;
+  /** Platform owner: can open the admin panel and any dealership */
+  superAdmin?: boolean;
+  /** Set while the platform owner is viewing a dealership */
+  actingAs?: string;
 }
 
 interface AuthState {

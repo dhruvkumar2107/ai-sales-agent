@@ -1,6 +1,7 @@
 import { leadFieldsSchema, type Call, type CallOutcome, type Language, type LeadFields, type TranscriptEntry, type TurnLatency } from "@axo/shared";
 import type { CallRecorder } from "../audio/recorder";
 import { nowIso, repo } from "../db/repo";
+import { bus } from "../lib/events";
 import { logger } from "../lib/logger";
 import { putEncrypted } from "../lib/storage";
 import { scoreLead } from "../leads/scoring";
@@ -159,5 +160,6 @@ export async function finalizeCall(i: FinalizeInput): Promise<Call | null> {
   }
 
   logger.info({ callId: i.callId, outcome: i.outcome, durationSec, avgFirstAudioMs: avg, costInr: cost.total, guardViolations: i.guardViolations }, "call finalized");
+  bus.emitEvent("call.finished", { orgId: i.orgId, call });
   return call;
 }

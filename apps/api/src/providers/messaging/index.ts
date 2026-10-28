@@ -26,6 +26,18 @@ export const TEMPLATES = {
     en: "Here is the {model} brochure from {showroom}: {link}",
     hi: "{showroom} की ओर से {model} का ब्रोशर: {link}",
   },
+  model_details: {
+    en: "{model} at {showroom}\nVariants: {variants}\nOn-road price: {price_range} (final price confirmed at the showroom)\nKey features: {features}\n{brochure}Reply here to book a test drive.",
+    hi: "{showroom} में {model}\nवेरिएंट: {variants}\nऑन-रोड कीमत: {price_range} (फ़ाइनल कीमत शोरूम पर कन्फ़र्म होगी)\nखास फ़ीचर: {features}\n{brochure}टेस्ट ड्राइव बुक करने के लिए यहीं जवाब दें।",
+  },
+  showroom_location: {
+    en: "{showroom} - {branch}\nAddress: {address}\nMap: {map}\nTimings: {timings}\nPhone: {phone}",
+    hi: "{showroom} - {branch}\nपता: {address}\nमैप: {map}\nसमय: {timings}\nफ़ोन: {phone}",
+  },
+  post_call_followup: {
+    en: "Thank you for calling {showroom}{name}! {details}You can reply here on WhatsApp anytime for prices, EMI or to book a test drive.",
+    hi: "{showroom} को कॉल करने के लिए धन्यवाद{name}! {details}कीमत, EMI या टेस्ट ड्राइव के लिए कभी भी यहीं WhatsApp पर जवाब दें।",
+  },
   exec_hot_lead: {
     en: "HOT LEAD: {name} ({phone}) wants {model}. Reason: {reason}. Call back within 5 minutes.",
     hi: "HOT LEAD: {name} ({phone}) wants {model}. Reason: {reason}. Call back within 5 minutes.",
@@ -45,13 +57,29 @@ export type TemplateName = keyof typeof TEMPLATES;
 export function renderTemplate(name: TemplateName, vars: Record<string, string | undefined>, lang: Language = "en"): string {
   const t = TEMPLATES[name];
   const text = lang === "hi" || lang === "hinglish" ? t.hi : t.en;
-  return text.replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? "").replace(/\s{2,}/g, " ").trim();
+  return text
+    .replace(/\{(\w+)\}/g, (_, k: string) => vars[k] ?? "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+/** Variable names in order of appearance: the body parameters ({{1}}, {{2}}, ...) of the matching Meta template. */
+export function templateParams(name: TemplateName): string[] {
+  return [...new Set([...TEMPLATES[name].en.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))];
 }
 
 export interface MessageResult {
   ok: boolean;
   id?: string;
   error?: string;
+  /** true when no provider is configured and the message was only logged (demo mode) */
+  logged?: boolean;
+}
+
+/** Per-send options: dealership WhatsApp number and, outside the 24 h window, an approved template. */
+export interface SendOptions {
+  meta?: { phoneNumberId?: string; token?: string; template?: { name: string; language: string; params: string[] } };
 }
 
 async function sendTwilio(to: string, body: string, channel: Channel): Promise<MessageResult> {
@@ -76,16 +104,41 @@ async function sendExotelSms(to: string, body: string): Promise<MessageResult> {
   return res.ok ? { ok: true, id: json.SMSMessage?.Sid } : { ok: false, error: String(res.status) };
 }
 
+/** Meta WhatsApp Cloud API: free-form text inside the 24 h customer window, approved template outside it. */
+async function sendMeta(to: string, body: string, o: NonNullable<SendOptions["meta"]>): Promise<MessageResult> {
+  const phoneNumberId = o.phoneNumberId || env.META_WA_PHONE_NUMBER_ID;
+  const token = o.token || env.META_WA_TOKEN;
+  if (!phoneNumberId || !token) return { ok: false, error: "WhatsApp number not configured" };
+  const payload = o.template
+    ? {
+        messaging_product: "whatsapp",
+        to: to.replace(/^\+/, ""),
+        type: "template",
+        template: { name: o.template.name, language: { code: o.template.language }, components: o.template.params.length ? [{ type: "body", parameters: o.template.params.map((text) => ({ type: "text", text: text || "-" })) }] : [] },
+      }
+    : { messaging_product: "whatsapp", to: to.replace(/^\+/, ""), type: "text", text: { body, preview_url: true } };
+  const res = await fetch(`https://graph.facebook.com/${env.META_GRAPH_VERSION}/${phoneNumberId}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = (await res.json().catch(() => ({}))) as { messages?: { id: string }[]; error?: { message?: string } };
+  return res.ok ? { ok: true, id: json.messages?.[0]?.id } : { ok: false, error: json.error?.message ?? String(res.status) };
+}
+
 /**
- * Send a WhatsApp or SMS message. In India, SMS needs DLT-registered templates and WhatsApp needs
- * approved templates for business-initiated messages; register the TEMPLATES above with your provider.
+ * Low-level send through the configured provider. Prefer `sendOrgMessage` (messaging/service.ts), which applies
+ * the dealership's switches and limits and keeps the message log. In India, SMS needs DLT-registered templates and
+ * WhatsApp needs approved templates for business-initiated messages.
  */
-export async function sendMessage(to: string, body: string, channel: Channel = "whatsapp"): Promise<MessageResult> {
+export async function sendMessage(to: string, body: string, channel: Channel = "whatsapp", opts: SendOptions = {}): Promise<MessageResult> {
   try {
+    if (channel === "whatsapp" && env.MESSAGING_PROVIDER === "meta") return await sendMeta(to, body, opts.meta ?? {});
     if (env.MESSAGING_PROVIDER === "twilio" && env.TWILIO_ACCOUNT_SID) return await sendTwilio(to, body, channel);
     if (env.MESSAGING_PROVIDER === "exotel" && env.EXOTEL_SID) return await sendExotelSms(to, body);
+    if (channel === "sms" && env.MESSAGING_PROVIDER === "meta" && env.TWILIO_ACCOUNT_SID) return await sendTwilio(to, body, channel);
     logger.info(`[messaging:${channel}] to ${maskPhone(to)}: ${body}`);
-    return { ok: true, id: `log_${Date.now()}` };
+    return { ok: true, id: `log_${Date.now()}`, logged: true };
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
