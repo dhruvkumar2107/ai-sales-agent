@@ -143,10 +143,13 @@ export class GeminiLlm implements LlmProvider {
   /** Primary model, then fallbacks tried in order when one is overloaded (503/429) or too slow. */
   private models = [env.GEMINI_MODEL, ...env.GEMINI_FALLBACK_MODELS.split(",").map((m) => m.trim())].filter((m, i, all) => m && all.indexOf(m) === i);
 
-  private async post(path: string, body: (model: string) => unknown, signal?: AbortSignal, timeoutMs = 15_000) {
+  private async post(path: string, body: (model: string) => unknown, signal?: AbortSignal, timeoutMs = 9_000) {
     let lastError: unknown;
+    const deadline = Date.now() + timeoutMs * 1.5;
     for (const model of this.models) {
-      const timeout = AbortSignal.timeout(timeoutMs);
+      const remaining = deadline - Date.now();
+      if (remaining < 1_000) break;
+      const timeout = AbortSignal.timeout(Math.min(timeoutMs, remaining));
       try {
         const res = await fetch(`${BASE}/${model}:${path}`, {
           method: "POST",
@@ -163,7 +166,7 @@ export class GeminiLlm implements LlmProvider {
         if (!timeout.aborted && !String(err).includes(" 429") && !/ 50[034]:/.test(String(err))) throw err;
       }
     }
-    throw lastError;
+    throw lastError ?? new Error("Gemini: no model answered in time");
   }
 
   /** Spoken replies need speed: keep thinking to a minimum on models that support it. */
