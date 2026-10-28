@@ -37,7 +37,7 @@ const envSchema = z.object({
   TELEPHONY_PROVIDER: z.enum(["twilio", "exotel", "mock"]).default("twilio"),
   STT_PROVIDER: z.enum(["deepgram", "sarvam", "mock"]).default("deepgram"),
   TTS_PROVIDER: z.enum(["elevenlabs", "sarvam", "mock"]).default("elevenlabs"),
-  LLM_PROVIDER: z.enum(["anthropic", "mock"]).default("anthropic"),
+  LLM_PROVIDER: z.enum(["anthropic", "gemini", "mock"]).default("anthropic"),
   MESSAGING_PROVIDER: z.enum(["twilio", "exotel", "log"]).default("log"),
 
   TWILIO_ACCOUNT_SID: z.string().optional(),
@@ -68,6 +68,10 @@ const envSchema = z.object({
   LLM_MODEL: z.string().default("claude-opus-5-5"),
   LLM_EFFORT: z.enum(["low", "medium", "high"]).default("low"),
   LLM_FALLBACKS: bool.default("true"),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default("gemini-3.6-flash"),
+  /** Tried in order when the primary model is overloaded or slow */
+  GEMINI_FALLBACK_MODELS: z.string().default("gemini-3.5-flash-lite,gemini-3.8-flash,gemini-flash-latest"),
 
   GOOGLE_CALENDAR_SA_EMAIL: z.string().optional(),
   GOOGLE_CALENDAR_SA_KEY: z.string().optional(),

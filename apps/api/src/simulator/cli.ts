@@ -4,6 +4,7 @@
  *   pnpm simulate                      # all scenarios, offline mock LLM
  *   pnpm simulate --scenario emi       # one scenario
  *   pnpm simulate --llm anthropic      # real Claude (needs ANTHROPIC_API_KEY)
+ *   pnpm simulate --llm gemini         # Google Gemini (needs GEMINI_API_KEY)
  *   pnpm simulate --interactive        # chat with the agent yourself
  *
  * Always runs against a sandboxed in-memory copy of the demo dealership.
@@ -28,7 +29,7 @@ async function main() {
 
   resetStore();
   await installDemoOrg(DEMO_ORG_ID);
-  const llm = createLlm((flag("llm") as "anthropic" | "mock") ?? "mock");
+  const llm = createLlm((flag("llm") as "anthropic" | "gemini" | "mock") ?? "mock");
   console.log(`${c.bold}AXO Voice Auto simulator${c.reset} ${c.dim}(llm=${llm.name})${c.reset}\n`);
 
   if (flag("interactive")) {

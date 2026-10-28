@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { detectLanguage } from "../../voice/language";
+import { speakDate, speakTime } from "../../voice/speech-format";
 import type { LlmContentBlock, LlmMessage, LlmProvider, LlmStreamOptions, LlmToolUse, LlmTurnResult } from "./types";
 
 /**
  * Deterministic, offline stand-in for Claude. It understands the scripted simulator scenarios well enough
  * to exercise every tool, so the full pipeline (tools, guards, latency logging, post-call analysis) runs
- * in CI without API keys. It is NOT a conversational model; use LLM_PROVIDER=anthropic for real calls.
+ * in CI without API keys. It is NOT a conversational model; use LLM_PROVIDER=anthropic or gemini for real calls.
  */
 
 type Lang = "en" | "hi";
@@ -123,6 +124,10 @@ function dateFromOffset(offset: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Spoken date/time ("29 October", "11 AM" / "subah 11 baje"); the mock's Hindi lines are romanised. */
+const sayDate = (lang: Lang, iso: string) => speakDate(iso, lang === "hi" ? "hinglish" : "en");
+const sayTime = (lang: Lang, hhmm: string) => speakTime(hhmm, lang === "hi" ? "hinglish" : "en");
+
 export class MockLlm implements LlmProvider {
   readonly name = "mock";
 
@@ -222,7 +227,7 @@ export class MockLlm implements LlmProvider {
         if (called.has("book_testdrive")) return { text: t(lang, "You're all set. Anything else I can help with?", "Sab set hai. Aur kuch madad chahiye?"), tools: [] };
         const confirmedBefore = o.messages.some((m) => m.role === "assistant" && /confirm|pakka/i.test(textOf(m)));
         if (!confirmedBefore)
-          return { text: t(lang, `Just to confirm, ${ent.name}, a ${ent.model} test drive on ${date} at ${ent.time}. Shall I book it?`, `Confirm kar doon, ${ent.name} ji, ${ent.model} ki test drive ${date} ko ${ent.time} baje. Pakka karoon?`), tools: [] };
+          return { text: t(lang, `Just to confirm, ${ent.name}, a ${ent.model} test drive on ${sayDate(lang, date)} at ${sayTime(lang, ent.time)}. Shall I book it?`, `Confirm kar doon, ${ent.name} ji, ${ent.model} ki test drive ${sayDate(lang, date)} ko ${sayTime(lang, ent.time)}. Pakka karoon?`), tools: [] };
         if (!RX.yes.test(last)) return { text: t(lang, "No problem, what time would you prefer?", "Koi baat nahi, kaunsa time theek rahega?"), tools: [] };
         return { text: "", tools: [{ name: "book_testdrive", input: { model: ent.model, date, time: ent.time, customer_name: ent.name, phone: ent.phone ?? callerPhone } }] };
       }
@@ -289,12 +294,12 @@ export class MockLlm implements LlmProvider {
       case "check_service_slots": {
         const slots = (res.slots as string[] | undefined) ?? [];
         if (!slots.length) return { text: t(lang, "That day is fully booked. Would another day work?", "Us din sab slots bhare hain. Koi aur din chalega?"), tools: [] };
-        return { text: t(lang, `I have ${slots[0]} or ${slots[1] ?? slots[0]} available. Which time suits you?`, `${slots[0]} ya ${slots[1] ?? slots[0]} ka slot khali hai. Kaunsa time theek rahega?`), tools: [] };
+        return { text: t(lang, `I have ${sayTime(lang, slots[0]!)} or ${sayTime(lang, slots[1] ?? slots[0]!)} available. Which time suits you?`, `${sayTime(lang, slots[0]!)} ya ${sayTime(lang, slots[1] ?? slots[0]!)} ka slot khali hai. Kaunsa time theek rahega?`), tools: [] };
       }
       case "book_testdrive":
       case "book_service":
         if (!res.booked) return { text: t(lang, "That slot just got taken. Could you pick another time?", "Woh slot abhi bhar gaya. Koi aur time batayenge?"), tools: [] };
-        return { text: t(lang, `Done! You're booked for ${res.date} at ${res.time} at our ${res.branchName} branch. I've sent the details on WhatsApp.`, `Ho gaya! ${res.date} ko ${res.time} baje ${res.branchName} branch mein booking pakki hai. Details WhatsApp par bhej di hain.`), tools: [] };
+        return { text: t(lang, `Done! You're booked for ${sayDate(lang, String(res.date))} at ${sayTime(lang, String(res.time))} at our ${res.branchName} branch. I've sent the details on WhatsApp.`, `Ho gaya! ${sayDate(lang, String(res.date))} ko ${sayTime(lang, String(res.time))} ${res.branchName} branch mein booking pakki hai. Details WhatsApp par bhej di hain.`), tools: [] };
       case "lookup_job_card":
         if (!res.verified) return { text: t(lang, "For security, could you confirm the registered mobile number on the vehicle?", "Security ke liye, gaadi par registered mobile number confirm karenge?"), tools: [] };
         return { text: t(lang, `Your vehicle status is ${String(res.status).replace(/_/g, " ")}. ${res.estimatedReadyAt ? `It should be ready by ${res.estimatedReadyAt}.` : ""}`, `Aapki gaadi ka status ${String(res.status).replace(/_/g, " ")} hai. ${res.estimatedReadyAt ? `${res.estimatedReadyAt} tak ready ho jayegi.` : ""}`), tools: [] };

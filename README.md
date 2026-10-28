@@ -141,10 +141,12 @@ Pick providers with env vars. A provider that has no credentials falls back to i
 | STT | `deepgram`, `sarvam` | Deepgram nova-3 `multi` covers English, Hindi and Hinglish. **Use Sarvam for Kannada.** |
 | TTS | `elevenlabs`, `sarvam` | ElevenLabs Flash v2.5 (lowest latency). Sarvam bulbul has natural hi/kn voices. Per-language voice IDs are set per agent. |
 | LLM | `anthropic` | Claude with streaming and tool calling. Default `claude-opus-5-5` at `LLM_EFFORT=low`, with server-side refusal fallback. For the lowest latency and cost, set `LLM_MODEL=claude-haiku-5-5`. |
+| LLM | `gemini` | Google Gemini over REST (SSE streaming, function calling). `GEMINI_MODEL` plus `GEMINI_FALLBACK_MODELS`, tried in order when a model is overloaded or slow. Free-tier keys can be slow at peak times. |
 
 ## Deployment
 
 - **Docker:** `docker compose up --build` runs the API, worker, dashboard and Redis. The default `.env` runs the demo stack (in-memory data, jobs inside the API). For production, set `DATA_BACKEND=firestore`, `QUEUE_BACKEND=bullmq`, `AUTH_MODE=firebase`, `NEXT_PUBLIC_AUTH_MODE=firebase`, Firebase credentials and `ENCRYPTION_KEY`. Seed the demo inside Docker with `docker compose run --rm seed`.
+- **Render (hosted demo API):** `render.yaml` is a Blueprint for a free Docker web service running the demo stack with Gemini and the browser test console. In Render: *New → Blueprint →* pick the repo, paste `GEMINI_API_KEY`. The free plan sleeps after 15 minutes idle (the first request then takes about a minute) and re-seeds the demo dealership on each start.
 - **Vercel (dashboard only):** import the repo, set **Root Directory = `apps/web`** (`apps/web/vercel.json` holds the build settings), and set `NEXT_PUBLIC_API_URL` to your API's public URL plus the `NEXT_PUBLIC_FIREBASE_*` variables. The **API must run on a long-lived host** (Docker on Railway, Render, Fly.io, Cloud Run with session affinity, or a VM): it holds live call sessions, telephony media WebSockets and in-memory call state for the length of each call. Add the dashboard's URL to the API's `WEB_ORIGIN`.
 - **Firebase:** enable Auth (email/password + Google), Firestore and Storage, and deploy `firestore.rules` / `storage.rules`. Both deny all client access, because every read and write goes through the API.
 

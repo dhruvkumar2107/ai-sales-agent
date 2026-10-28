@@ -36,10 +36,51 @@ class Capture extends AudioWorkletProcessor {
 registerProcessor("capture", Capture);
 `;
 
+/** One-click customer lines for demos, grouped by agent. They match the scripted simulator scenarios. */
+const SAMPLE_LINES: Record<string, string[]> = {
+  "agent-car-showroom": [
+    "What's the on-road price of the Venue?",
+    "I want to book a test drive of the Creta tomorrow",
+    "My name is Rahul",
+    "11 am please",
+    "Yes, please confirm",
+    "What would the EMI be for the Creta?",
+    "I want to exchange my old car for a new Verna",
+    "Is the Creta better than the Seltos?",
+    "I want to buy the Creta today, I'm visiting the showroom this evening",
+    "नमस्ते, मुझे क्रेटा की टेस्ट ड्राइव चाहिए कल",
+    "That's all, thank you",
+  ],
+  "agent-two-wheeler": ["What's the price of the Activa?", "I want a test ride tomorrow", "Please don't call me again", "Sorry, wrong number", "That's all, thank you"],
+  "agent-service-center": [
+    "Mujhe gaadi ki service book karni hai",
+    "Number KA01AB1234 hai",
+    "Mera naam Suresh hai, kal subah",
+    "10 baje",
+    "Is my car ready? Number is KA03MN4567",
+    "This is the worst service ever! The brakes are making noise again. Third time!",
+    "Bas dhanyavaad",
+  ],
+};
+
+/** Reads agent replies aloud with the browser's built-in voices (text mode has no server audio). */
+function speak(text: string) {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = /[ऀ-ॿ]/.test(text) ? "hi-IN" : /[ಀ-೿]/.test(text) ? "kn-IN" : "en-IN";
+  const voice = window.speechSynthesis.getVoices().find((v) => v.lang === u.lang) ?? window.speechSynthesis.getVoices().find((v) => v.lang.startsWith(u.lang.slice(0, 2)));
+  if (voice) u.voice = voice;
+  u.rate = 1.05;
+  window.speechSynthesis.speak(u);
+}
+
 export default function ConsolePage() {
   const { data: agents } = useApi<AgentConfig[]>("/api/agents");
   const [agentId, setAgentId] = useState("");
-  const [mode, setMode] = useState<"voice" | "text">("voice");
+  const [mode, setMode] = useState<"voice" | "text">("text");
+  const [speakReplies, setSpeakReplies] = useState(true);
+  const speakRef = useRef(true);
+  speakRef.current = speakReplies && mode === "text";
   const [lines, setLines] = useState<Line[]>([]);
   const [connected, setConnected] = useState(false);
   const [latencies, setLatencies] = useState<number[]>([]);
@@ -110,7 +151,10 @@ export default function ConsolePage() {
       ws.onmessage = (ev) => {
         if (ev.data instanceof ArrayBuffer) return playPcm(ev.data);
         const msg = JSON.parse(ev.data as string);
-        if (msg.type === "transcript" && (msg.role === "agent" || msg.role === "caller")) setLines((l) => [...l, { role: msg.role, text: msg.text, interrupted: msg.interrupted }]);
+        if (msg.type === "transcript" && (msg.role === "agent" || msg.role === "caller")) {
+          setLines((l) => [...l, { role: msg.role, text: msg.text, interrupted: msg.interrupted }]);
+          if (msg.role === "agent" && speakRef.current) speak(msg.text);
+        }
         if (msg.type === "clear" || msg.type === "barge_in") flushPlayback();
         if (msg.type === "latency") setLatencies((l) => [...l, msg.firstAudioMs]);
         if (msg.type === "transfer") setLines((l) => [...l, { role: "system", text: `Transfer requested to ${msg.number}. Browser calls can't be bridged, so a callback is scheduled.` }]);
@@ -148,13 +192,19 @@ export default function ConsolePage() {
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: "hangup" }));
     stopMic();
     flushPlayback();
+    if (typeof window !== "undefined") window.speechSynthesis?.cancel();
+  };
+
+  const sendLine = (line: string) => {
+    if (!line.trim() || wsRef.current?.readyState !== WebSocket.OPEN) return;
+    flushPlayback();
+    window.speechSynthesis?.cancel();
+    wsRef.current.send(JSON.stringify({ type: "text", text: line }));
   };
 
   const sendText = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim() || wsRef.current?.readyState !== WebSocket.OPEN) return;
-    flushPlayback();
-    wsRef.current.send(JSON.stringify({ type: "text", text }));
+    sendLine(text);
     setText("");
   };
 
@@ -225,6 +275,29 @@ export default function ConsolePage() {
                 <Send className="h-4 w-4" />
               </Button>
             </form>
+            {mode === "text" && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                <input type="checkbox" checked={speakReplies} onChange={(e) => setSpeakReplies(e.target.checked)} /> Read agent replies aloud
+              </label>
+            )}
+            {!!SAMPLE_LINES[agentId]?.length && (
+              <div className="mt-3">
+                <p className="mb-1.5 text-xs text-muted-foreground">Try saying {connected ? "(click to send)" : "(start the call first)"}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {SAMPLE_LINES[agentId]!.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={!connected}
+                      onClick={() => sendLine(s)}
+                      className="rounded-full border bg-card px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
