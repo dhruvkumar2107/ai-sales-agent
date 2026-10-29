@@ -281,7 +281,7 @@ export function AddBusinessDialog({ open, onClose, onCreated }: { open: boolean;
               <Select value={f.plan} onChange={(e) => set("plan", e.target.value)}>
                 {PLAN_IDS.map((p) => (
                   <option key={p} value={p}>
-                    {PLANS[p].label} · {formatINR(PLANS[p].price)}/month · {PLANS[p].calls} calls
+                    {PLANS[p].label} · {formatINR(PLANS[p].price)}/month · {PLANS[p].minutes} min
                   </option>
                 ))}
               </Select>

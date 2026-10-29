@@ -9,17 +9,30 @@ export type LeadStage = (typeof LEAD_STAGES)[number];
 
 export const LEAD_SOURCES = ["inbound_call", "whatsapp", "facebook", "instagram", "website", "walk_in", "campaign", "referral", "other"] as const;
 
-/** Subscription plans sold to dealerships (INR / month). `calls` = included calls per month. */
+/**
+ * Plans sold to businesses (INR / month, GST extra). Billed on call minutes, the thing that actually costs money
+ * (phone line + AI + voice ≈ ₹8 a minute at the default cost rates). At full use every plan keeps 55-70% of its
+ * price after costs, and extra minutes keep 60%; light users keep far more.
+ */
 export const PLAN_IDS = ["trial", "starter", "growth", "enterprise"] as const;
 export type PlanId = (typeof PLAN_IDS)[number];
-export const PLANS: Record<PlanId, { label: string; price: number; calls: number; messages: number }> = {
-  trial: { label: "Trial", price: 0, calls: 100, messages: 300 },
-  starter: { label: "Starter", price: 9999, calls: 1000, messages: 3000 },
-  growth: { label: "Growth", price: 19999, calls: 3000, messages: 9000 },
-  enterprise: { label: "Pro", price: 34999, calls: 6000, messages: 18000 },
+export const PLANS: Record<PlanId, { label: string; price: number; minutes: number; messages: number; pitch: string }> = {
+  trial: { label: "Trial", price: 0, minutes: 30, messages: 100, pitch: "Free 30 minutes to try it" },
+  starter: { label: "Starter", price: 2999, minutes: 100, messages: 300, pitch: "Small shop or clinic: ~40 calls a month" },
+  growth: { label: "Growth", price: 6999, minutes: 300, messages: 1000, pitch: "Busy business: ~120 calls a month" },
+  enterprise: { label: "Pro", price: 14999, minutes: 700, messages: 2500, pitch: "Multi-branch or high volume: ~280 calls a month" },
 };
-/** Charged per call above the plan's included calls */
-export const OVERAGE_PER_CALL = 6;
+/** Charged per call minute above the plan's included minutes */
+export const OVERAGE_PER_MINUTE = 20;
+/** One-time setup fee per business (configuring the agent, numbers and WhatsApp); can be changed per business */
+export const SETUP_FEE = 30000;
+/** Payment gateway fee (Razorpay/Cashfree ≈ 2%), counted as a cost so partner profit is what actually reaches the bank */
+export const PAYMENT_FEE_PERCENT = 2;
+/** Profit split between the platform's partners, by default two equal partners */
+export const DEFAULT_PARTNERS = [
+  { name: "Partner 1", share: 50 },
+  { name: "Partner 2", share: 50 },
+];
 export type LeadSource = (typeof LEAD_SOURCES)[number];
 
 export const LEAD_SCORES = ["hot", "warm", "cold"] as const;

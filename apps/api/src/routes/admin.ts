@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { agentConfigSchema, businessProfileSchema, LANGUAGES, memberSchema, orgPlatformSchema, orgSchema, PLAN_IDS, PLANS, type BusinessProfile, type Language, type Org, type OrgPlatform } from "@axo/shared";
+import { agentConfigSchema, businessProfileSchema, LANGUAGES, memberSchema, OVERAGE_PER_MINUTE, PAYMENT_FEE_PERCENT, orgPlatformSchema, orgSchema, PLAN_IDS, PLANS, SETUP_FEE, type BusinessProfile, type Language, type Org, type OrgPlatform } from "@axo/shared";
 import { AGENT_TEMPLATES } from "../../prompts/agents";
 import { businessAgentDefaults } from "../../prompts/business";
 import { requireSuperAdmin } from "../auth/auth";
@@ -9,6 +9,8 @@ import { env } from "../config";
 import { global, newId, nowIso, platformOf, repo } from "../db/repo";
 import { encryptString, redactSecret } from "../lib/crypto";
 import { normalizePhone } from "../lib/mask";
+import { checkKeys, describeKeys, saveKeys } from "../platform/keys";
+import { getPartners, savePartners, splitProfit, type Partner } from "../platform/partners";
 import { billing, monthStart, orgUsage } from "../platform/usage";
 
 type PlatformPatch = { [K in keyof OrgPlatform]?: Partial<OrgPlatform[K]> | OrgPlatform[K] };
@@ -26,7 +28,7 @@ function mergePlatform(cur: OrgPlatform, patch: PlatformPatch): OrgPlatform {
 async function orgRow(org: Org, month?: string) {
   const usage = await orgUsage(org.id, month);
   const p = platformOf(org);
-  return { org: { ...org, platform: p }, usage, billing: billing({ ...org, platform: p }, usage) };
+  return { org: { ...org, platform: p }, usage, billing: billing({ ...org, platform: p }, usage, month) };
 }
 
 export async function adminRoutes(app: FastifyInstance) {
@@ -38,6 +40,7 @@ export async function adminRoutes(app: FastifyInstance) {
     messagingProvider: env.MESSAGING_PROVIDER,
     telephonyProvider: env.TELEPHONY_PROVIDER,
     plans: PLANS,
+    pricing: { overagePerMinute: OVERAGE_PER_MINUTE, setupFee: SETUP_FEE, paymentFeePercent: PAYMENT_FEE_PERCENT },
     // What to paste into the Meta app (WhatsApp > Configuration) and the telephony provider's number settings.
     setup: {
       whatsappWebhookUrl: `${env.PUBLIC_BASE_URL}/webhooks/whatsapp`,
@@ -55,8 +58,9 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get("/admin/overview", { preHandler: admin }, async (req) => {
     const month = (req.query as { month?: string }).month;
     const orgs = await global.orgs().list({ orderBy: "createdAt" });
-    const rows = await Promise.all(orgs.map((o) => orgRow(o, month)));
+    const [rows, partners] = await Promise.all([Promise.all(orgs.map((o) => orgRow(o, month))), getPartners()]);
     const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((n, r) => n + f(r), 0);
+    const profit = Math.round(sum((r) => r.billing.profit));
     return {
       month: month ?? new Date(Date.parse(monthStart()) + 5.5 * 3600_000).toISOString().slice(0, 7),
       totals: {
@@ -68,12 +72,38 @@ export async function adminRoutes(app: FastifyInstance) {
         whatsappChats: sum((r) => r.usage.whatsappChats),
         leads: sum((r) => r.usage.leads),
         testDrives: sum((r) => r.usage.testDrives),
-        cost: Math.round(sum((r) => r.usage.cost)),
+        cost: Math.round(sum((r) => r.billing.cost)),
         revenue: sum((r) => r.billing.revenue),
-        profit: Math.round(sum((r) => r.billing.profit)),
+        monthlyRevenue: sum((r) => r.billing.basePrice + r.billing.overage),
+        setupFees: sum((r) => r.billing.setupFee),
+        setupFeesDue: sum((r) => r.billing.setupFeeDue),
+        profit,
       },
+      partners: splitProfit(profit, partners),
       dealers: rows,
     };
+  });
+
+  /** Provider keys (Settings page): values for settings, last 4 characters for secrets, and where each comes from. */
+  app.get("/admin/keys", { preHandler: admin }, async () => ({ fields: await describeKeys(), partners: await getPartners() }));
+
+  /** Save keys: { values: { TWILIO_AUTH_TOKEN: "...", ... } }. "" clears a saved value; they apply immediately. */
+  app.put("/admin/keys", { preHandler: admin }, async (req, reply) => {
+    const values = ((req.body ?? {}) as { values?: Record<string, string> }).values ?? {};
+    const error = await saveKeys(values);
+    if (error) return reply.code(400).send({ error });
+    return { fields: await describeKeys() };
+  });
+
+  /** Try every configured provider with a read-only request. */
+  app.post("/admin/keys/check", { preHandler: admin }, async () => ({ checks: await checkKeys() }));
+
+  /** Partners and their profit shares: { partners: [{ name, share }] }, shares add up to 100. */
+  app.put("/admin/partners", { preHandler: admin }, async (req, reply) => {
+    const partners = ((req.body ?? {}) as { partners?: Partner[] }).partners ?? [];
+    const error = await savePartners(partners);
+    if (error) return reply.code(400).send({ error });
+    return { partners: await getPartners() };
   });
 
   /** One dealership: usage, daily calls this month, team, recent calls and messages. */

@@ -35,3 +35,8 @@ export function telephony(): TelephonyProvider {
 export function setTelephony(t: TelephonyProvider) {
   instance = t;
 }
+
+/** Pick the provider again from the current config (after keys change in the admin panel). */
+export function resetTelephony() {
+  instance = null;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Shield } from "lucide-react";
+import { LayoutDashboard, Settings, Shield } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ErrorNote, Input } from "@/components/ui";
@@ -74,10 +74,15 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
             <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">AX</div>
             <div>
               <p className="text-sm font-semibold leading-tight">AXO Platform Admin</p>
-              <p className="text-xs text-muted-foreground">All dealerships</p>
+              <p className="text-xs text-muted-foreground">All businesses</p>
             </div>
           </Link>
           <div className="flex gap-2">
+            <Link href="/admin/settings">
+              <Button variant="ghost" size="sm">
+                <Settings className="h-4 w-4" /> Settings
+              </Button>
+            </Link>
             <Button variant="ghost" size="sm" onClick={() => (window.location.href = "/dashboard")}>
               <LayoutDashboard className="h-4 w-4" /> My dashboard
             </Button>

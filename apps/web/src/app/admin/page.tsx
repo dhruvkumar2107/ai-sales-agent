@@ -12,7 +12,8 @@ import { openDealerDashboard, type DealerRow } from "./shared";
 
 interface Overview {
   month: string;
-  totals: { dealers: number; active: number; calls: number; minutes: number; messages: number; whatsappChats: number; leads: number; testDrives: number; cost: number; revenue: number; profit: number };
+  totals: { dealers: number; active: number; calls: number; minutes: number; messages: number; whatsappChats: number; leads: number; testDrives: number; cost: number; revenue: number; monthlyRevenue: number; setupFees: number; setupFeesDue: number; profit: number };
+  partners: { name: string; share: number; amount: number }[];
   dealers: DealerRow[];
 }
 
@@ -46,10 +47,25 @@ export default function AdminOverviewPage() {
         <Stat label="Calls" value={t?.calls ?? "-"} hint={t ? `${t.minutes} minutes` : undefined} />
         <Stat label="WhatsApp sent" value={t?.messages ?? "-"} hint={t ? `${t.whatsappChats} chats` : undefined} />
         <Stat label="Leads" value={t?.leads ?? "-"} hint={t ? `${t.testDrives} test drives` : undefined} />
-        <Stat label="Revenue" value={formatINR(t?.revenue)} hint="plans + overage" />
-        <Stat label="Your cost" value={formatINR(t?.cost)} hint="calls + messages" />
-        <Stat label="Profit" value={formatINR(t?.profit)} />
+        <Stat label="Revenue" value={formatINR(t?.revenue)} hint={t ? `${formatINR(t.monthlyRevenue)} plans + ${formatINR(t.setupFees)} setup` : undefined} />
+        <Stat label="Your cost" value={formatINR(t?.cost)} hint="calls, messages, gateway" />
+        <Stat label="Profit" value={formatINR(t?.profit)} hint={t?.setupFeesDue ? `${formatINR(t.setupFeesDue)} setup fees due` : undefined} />
       </div>
+      {data?.partners && (
+        <div className="mb-6 flex flex-wrap gap-3">
+          {data.partners.map((p) => (
+            <div key={p.name} className="rounded-lg border bg-card px-4 py-2.5">
+              <span className="text-xs text-muted-foreground">
+                {p.name} · {p.share}%
+              </span>
+              <div className={`text-lg font-semibold tabular-nums ${p.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>{formatINR(p.amount)}</div>
+            </div>
+          ))}
+          <Link href="/admin/settings" className="self-center text-xs text-muted-foreground hover:underline">
+            Change partners
+          </Link>
+        </div>
+      )}
 
       <Card>
         {!data?.dealers.length ? (
@@ -63,8 +79,8 @@ export default function AdminOverviewPage() {
                 <Tr>
                   <Th>Business</Th>
                   <Th>Plan</Th>
-                  <Th>Calls used</Th>
-                  <Th>Minutes</Th>
+                  <Th>Minutes used</Th>
+                  <Th>Calls</Th>
                   <Th>WhatsApp</Th>
                   <Th>Leads</Th>
                   <Th>Revenue</Th>
@@ -76,7 +92,7 @@ export default function AdminOverviewPage() {
               </thead>
               <tbody>
                 {data.dealers.map(({ org, usage, billing }) => {
-                  const pct = billing.includedCalls ? Math.min(100, Math.round((usage.calls / billing.includedCalls) * 100)) : 0;
+                  const pct = billing.includedMinutes ? Math.min(100, Math.round((usage.minutes / billing.includedMinutes) * 100)) : 0;
                   return (
                     <Tr key={org.id}>
                       <Td>
@@ -90,18 +106,19 @@ export default function AdminOverviewPage() {
                           <Badge variant="secondary">{billing.planLabel}</Badge>
                           {org.status === "suspended" && <Badge variant="hot">suspended</Badge>}
                           {!org.platform.features.whatsapp && <Badge variant="warm">WhatsApp off</Badge>}
+                          {billing.setupFeeDue > 0 && <Badge variant="warm">setup due</Badge>}
                         </div>
                       </Td>
                       <Td className="min-w-[140px]">
                         <div className="text-sm tabular-nums">
-                          {usage.calls} / {billing.includedCalls}
-                          {billing.overageCalls > 0 && <span className="text-amber-600"> (+{billing.overageCalls})</span>}
+                          {usage.minutes} / {billing.includedMinutes}
+                          {billing.overageMinutes > 0 && <span className="text-amber-600"> (+{billing.overageMinutes})</span>}
                         </div>
                         <div className="mt-1 h-1.5 w-full rounded-full bg-muted">
                           <div className={`h-1.5 rounded-full ${pct >= 100 ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
                         </div>
                       </Td>
-                      <Td className="tabular-nums">{usage.minutes}</Td>
+                      <Td className="tabular-nums">{usage.calls}</Td>
                       <Td className="tabular-nums">
                         {usage.messages}
                         <span className="text-xs text-muted-foreground"> · {usage.whatsappChats} chats</span>
@@ -111,7 +128,7 @@ export default function AdminOverviewPage() {
                         {usage.hotLeads > 0 && <span className="text-xs text-red-600"> · {usage.hotLeads} hot</span>}
                       </Td>
                       <Td className="tabular-nums">{formatINR(billing.revenue)}</Td>
-                      <Td className="tabular-nums">{formatINR(usage.cost)}</Td>
+                      <Td className="tabular-nums">{formatINR(billing.cost)}</Td>
                       <Td className={`tabular-nums font-medium ${billing.profit < 0 ? "text-red-600" : "text-emerald-600"}`}>{formatINR(billing.profit)}</Td>
                       <Td className="whitespace-nowrap text-xs">{formatDateTime(usage.lastCallAt)}</Td>
                       <Td>
@@ -177,7 +194,7 @@ function CreateDealer({ open, onClose, onCreated }: { open: boolean; onClose: ()
             <Select value={f.plan} onChange={set("plan")}>
               {PLAN_IDS.map((p) => (
                 <option key={p} value={p}>
-                  {PLANS[p].label} · {formatINR(PLANS[p].price)}/month · {PLANS[p].calls} calls
+                  {PLANS[p].label} · {formatINR(PLANS[p].price)}/month · {PLANS[p].minutes} min
                 </option>
               ))}
             </Select>

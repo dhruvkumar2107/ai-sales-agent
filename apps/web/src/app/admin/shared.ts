@@ -20,10 +20,15 @@ export interface Usage {
 
 export interface Billing {
   planLabel: string;
-  includedCalls: number;
+  includedMinutes: number;
   basePrice: number;
-  overageCalls: number;
+  overageMinutes: number;
+  overage: number;
+  setupFee: number;
+  setupFeeDue: number;
   revenue: number;
+  paymentFees: number;
+  cost: number;
   profit: number;
 }
 

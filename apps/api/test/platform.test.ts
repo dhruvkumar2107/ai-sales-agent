@@ -109,7 +109,7 @@ describe("admin panel", () => {
     const overview = await app.inject({ method: "GET", url: "/admin/overview" });
     const o = overview.json() as { totals: { dealers: number; revenue: number }; dealers: { org: { id: string }; billing: { basePrice: number } }[] };
     expect(o.totals.dealers).toBe(2);
-    expect(o.dealers.find((d) => d.org.id === newOrg.id)?.billing.basePrice).toBe(9999);
+    expect(o.dealers.find((d) => d.org.id === newOrg.id)?.billing.basePrice).toBe(2999);
 
     const patched = await app.inject({ method: "PATCH", url: `/admin/orgs/${newOrg.id}`, payload: { plan: "growth", platform: { features: { whatsappBot: false }, whatsapp: { phoneNumberId: "1234567890" } }, whatsappToken: "EAAG-secret-token" } });
     expect(patched.statusCode).toBe(200);

@@ -77,13 +77,13 @@ export default function DealerAdminPage({ params }: { params: { id: string } }) 
       {suspended && <ErrorNote error="Suspended: their dashboard is locked, the AI does not answer or place calls, and no WhatsApp messages are sent." />}
 
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <Stat label="Calls" value={`${usage.calls}/${billing.includedCalls}`} hint={`${usage.inbound} in · ${usage.outbound} out · ${usage.web} test`} />
-        <Stat label="Minutes" value={usage.minutes} />
+        <Stat label="Minutes" value={`${usage.minutes}/${billing.includedMinutes}`} hint={billing.overageMinutes ? `${billing.overageMinutes} extra minutes` : "used / included"} />
+        <Stat label="Calls" value={usage.calls} hint={`${usage.inbound} in · ${usage.outbound} out · ${usage.web} test`} />
         <Stat label="WhatsApp sent" value={usage.messages} hint={`${usage.whatsappChats} chats`} />
         <Stat label="Leads" value={usage.leads} hint={`${usage.hotLeads} hot`} />
         <Stat label="Bookings" value={usage.testDrives + usage.serviceBookings} hint={`${usage.testDrives} test drives · ${usage.serviceBookings} service`} />
-        <Stat label="Bill" value={formatINR(billing.revenue)} hint={billing.overageCalls ? `${formatINR(billing.basePrice)} + ${billing.overageCalls} extra calls` : billing.planLabel} />
-        <Stat label="Your cost" value={formatINR(usage.cost)} />
+        <Stat label="Bill" value={formatINR(billing.revenue)} hint={[`${formatINR(billing.basePrice)} plan`, billing.overage && `${formatINR(billing.overage)} extra`, billing.setupFee && `${formatINR(billing.setupFee)} setup`].filter(Boolean).join(" + ")} />
+        <Stat label="Your cost" value={formatINR(billing.cost)} hint={`incl. ${formatINR(billing.paymentFees)} gateway`} />
         <Stat label="Profit" value={formatINR(billing.profit)} />
       </div>
 
@@ -262,7 +262,9 @@ function Controls({ org, saving, onSave }: { org: DealerRow["org"]; saving: bool
   const [features, setFeatures] = useState(org.platform.features);
   const [limits, setLimits] = useState(org.platform.limits);
   const [price, setPrice] = useState(org.platform.monthlyPrice);
+  const [setupFee, setSetupFee] = useState(org.platform.setupFee);
   useEffect(() => {
+    setSetupFee(org.platform.setupFee);
     setPlan(org.plan);
     setFeatures(org.platform.features);
     setLimits(org.platform.limits);
@@ -281,7 +283,7 @@ function Controls({ org, saving, onSave }: { org: DealerRow["org"]; saving: bool
             <Select value={plan} onChange={(e) => setPlan(e.target.value as typeof plan)}>
               {PLAN_IDS.map((p) => (
                 <option key={p} value={p}>
-                  {PLANS[p].label} · {formatINR(PLANS[p].price)} · {PLANS[p].calls} calls
+                  {PLANS[p].label} · {formatINR(PLANS[p].price)} · {PLANS[p].minutes} min
                 </option>
               ))}
             </Select>
@@ -289,6 +291,20 @@ function Controls({ org, saving, onSave }: { org: DealerRow["org"]; saving: bool
           <Field label="Custom monthly price (₹)" hint="0 = plan price">
             <Input type="number" min={0} value={price} onChange={(e) => setPrice(Number(e.target.value))} />
           </Field>
+        </div>
+        <div className="flex items-end gap-3 rounded-md border p-3">
+          <Field label="One-time setup fee (₹)" hint={org.platform.setupFeePaidAt ? `Received ${formatDateTime(org.platform.setupFeePaidAt)}` : "0 = waived"} className="flex-1">
+            <Input type="number" min={0} value={setupFee} onChange={(e) => setSetupFee(Number(e.target.value))} />
+          </Field>
+          {org.platform.setupFeePaidAt ? (
+            <Button variant="ghost" size="sm" disabled={saving} onClick={() => onSave({ platform: { setupFeePaidAt: "" } })}>
+              Mark unpaid
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" disabled={saving || !setupFee} onClick={() => onSave({ platform: { setupFee, setupFeePaidAt: new Date().toISOString() } })}>
+              Mark received
+            </Button>
+          )}
         </div>
         {(Object.keys(FEATURE_LABELS) as (keyof OrgPlatform["features"])[]).map((k) => (
           <Switch key={k} checked={features[k]} onChange={(v) => setFeatures({ ...features, [k]: v })} label={FEATURE_LABELS[k].label} hint={FEATURE_LABELS[k].hint} />
@@ -302,7 +318,7 @@ function Controls({ org, saving, onSave }: { org: DealerRow["org"]; saving: bool
           </Field>
         </div>
         <div className="flex justify-end">
-          <Button disabled={saving} onClick={() => onSave({ plan, platform: { features, limits, monthlyPrice: price } })}>
+          <Button disabled={saving} onClick={() => onSave({ plan, platform: { features, limits, monthlyPrice: price, setupFee } })}>
             {saving ? "Saving…" : "Save controls"}
           </Button>
         </div>

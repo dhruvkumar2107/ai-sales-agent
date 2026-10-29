@@ -14,6 +14,7 @@ import {
   PLAN_IDS,
   ROLES,
   SERVICE_TYPES,
+  SETUP_FEE,
   TIMELINES,
   VEHICLE_TYPES,
 } from "./constants";
@@ -68,6 +69,9 @@ export const orgPlatformSchema = z.object({
   contact: z.object({ name: z.string().default(""), phone: z.string().default(""), email: z.string().default("") }).default({}),
   /** Monthly price override in INR; 0 = plan list price */
   monthlyPrice: z.number().min(0).default(0),
+  /** One-time setup fee in INR (0 = waived) and when it was received; counted as revenue in that month */
+  setupFee: z.number().min(0).default(SETUP_FEE),
+  setupFeePaidAt: z.string().default(""),
   notes: z.string().default(""),
 });
 export type OrgPlatform = z.infer<typeof orgPlatformSchema>;

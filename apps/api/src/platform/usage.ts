@@ -1,4 +1,4 @@
-import { OVERAGE_PER_CALL, PLANS, type Org } from "@axo/shared";
+import { OVERAGE_PER_MINUTE, PAYMENT_FEE_PERCENT, PLANS, type Org } from "@axo/shared";
 import { global, platformOf, repo } from "../db/repo";
 
 /** First instant of the IST calendar month containing `at` (or of "YYYY-MM"), as an ISO string. */
@@ -57,14 +57,36 @@ export async function orgUsage(orgId: string, month?: string): Promise<OrgUsage>
   };
 }
 
-/** What the dealership owes for the month: plan price (or override) plus per-call overage. */
-export function billing(org: Org, usage: OrgUsage) {
+/**
+ * What the business owes for the month and what is left for the partners: plan price (or override), extra
+ * minutes, and the one-time setup fee in the month it was received; costs are usage plus payment gateway fees.
+ */
+export function billing(org: Org, usage: OrgUsage, month?: string) {
   const plan = PLANS[org.plan] ?? PLANS.trial;
   const p = platformOf(org);
-  const base = p.monthlyPrice || plan.price;
-  const overageCalls = Math.max(0, usage.calls - plan.calls);
-  const revenue = org.status === "suspended" ? 0 : base + overageCalls * OVERAGE_PER_CALL;
-  return { planLabel: plan.label, includedCalls: plan.calls, basePrice: base, overageCalls, revenue, profit: revenue - usage.cost };
+  const active = org.status !== "suspended";
+  const base = active ? p.monthlyPrice || plan.price : 0;
+  const overageMinutes = active ? Math.max(0, Math.ceil(usage.minutes - plan.minutes)) : 0;
+  const overage = overageMinutes * OVERAGE_PER_MINUTE;
+  const paidAt = p.setupFeePaidAt;
+  const setupFee = paidAt && paidAt >= monthStart(month) && paidAt < monthEnd(month) ? p.setupFee : 0;
+  const revenue = base + overage + setupFee;
+  const paymentFees = Math.round((revenue * PAYMENT_FEE_PERCENT) / 100);
+  const cost = Math.round(usage.cost + paymentFees);
+  return {
+    planLabel: plan.label,
+    includedMinutes: plan.minutes,
+    basePrice: base,
+    overageMinutes,
+    overage,
+    setupFee,
+    /** Setup fee not received yet */
+    setupFeeDue: p.setupFee > 0 && !paidAt ? p.setupFee : 0,
+    revenue,
+    paymentFees,
+    cost,
+    profit: revenue - cost,
+  };
 }
 
 export type LimitCheck = { ok: true } | { ok: false; reason: string };

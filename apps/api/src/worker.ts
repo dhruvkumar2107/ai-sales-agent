@@ -1,5 +1,6 @@
 import { env } from "./config";
 import { logger } from "./lib/logger";
+import { applyStoredKeys } from "./platform/keys";
 import { jobQueue } from "./queue";
 import { startJobs } from "./queue/handlers";
 
@@ -12,6 +13,9 @@ async function main() {
     logger.warn("QUEUE_BACKEND is not bullmq; jobs already run inside the API process. Exiting worker.");
     return;
   }
+  await applyStoredKeys();
+  // Keys saved in the admin panel reach this separate process within a minute.
+  setInterval(() => void applyStoredKeys().catch((err) => logger.warn({ err: (err as Error).message }, "reloading keys failed")), 60_000).unref();
   await startJobs();
   logger.info("worker running");
   const stop = async () => {
