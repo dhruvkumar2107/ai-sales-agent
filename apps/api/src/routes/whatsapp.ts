@@ -82,11 +82,12 @@ export async function whatsappRoutes(app: FastifyInstance) {
   app.get("/api/whatsapp/status", { preHandler: any }, async (req) => {
     const org = await global.orgs().get(orgOf(req));
     const p = platformOf(org);
+    const ownNumber = Boolean(p.whatsapp.phoneNumberId && (await repo(orgOf(req)).settings()).secrets.metaWaToken);
     return {
       features: p.features,
       displayNumber: p.whatsapp.displayNumber,
-      provider: env.MESSAGING_PROVIDER,
-      live: env.MESSAGING_PROVIDER !== "log",
+      provider: ownNumber ? "meta" : env.MESSAGING_PROVIDER,
+      live: ownNumber || env.MESSAGING_PROVIDER !== "log",
       limits: p.limits,
     };
   });

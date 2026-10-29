@@ -3,16 +3,16 @@ import { logger } from "../../lib/logger";
 import { maskPhone } from "../../lib/mask";
 import { ExotelTelephony } from "./exotel";
 import { TwilioTelephony } from "./twilio";
-import type { TelephonyProvider } from "./types";
+import type { OutboundCallRequest, TelephonyProvider } from "./types";
 
 export * from "./types";
 
 /** Logs instead of dialing. Used in dev/tests when no telephony credentials are configured. */
 export class MockTelephony implements TelephonyProvider {
   readonly name = "mock" as const;
-  placed: { to: string; callId: string }[] = [];
-  async placeCall(req: { to: string; callId: string }) {
-    this.placed.push({ to: req.to, callId: req.callId });
+  placed: { to: string; callId: string; from?: string }[] = [];
+  async placeCall(req: OutboundCallRequest) {
+    this.placed.push({ to: req.to, callId: req.callId, from: req.from });
     logger.info(`[mock telephony] would dial ${maskPhone(req.to)} for ${req.callId}`);
     return `mock_${req.callId}`;
   }

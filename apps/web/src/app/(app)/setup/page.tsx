@@ -488,6 +488,7 @@ function AgentsStep() {
   const { data: templates } = useApi<AgentConfig[]>("/api/agent-templates");
   const [sel, setSel] = useState<AgentConfig | null>(null);
   const { run, note } = useSaver();
+  const { me } = useAuth();
   const current = sel ?? agents?.[0] ?? null;
 
   const update = (patch: Partial<AgentConfig>) => current && setSel({ ...current, ...patch });
@@ -538,8 +539,8 @@ function AgentsStep() {
             <Field label="Languages" hint="Comma separated: en, hi, kn, hinglish">
               <Input value={current.languages.join(", ")} onChange={(e) => update({ languages: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) as AgentConfig["languages"] })} />
             </Field>
-            <Field label="Phone numbers" hint="E.164, comma separated">
-              <Input value={current.phoneNumbers.join(", ")} onChange={(e) => update({ phoneNumbers: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
+            <Field label="Phone numbers" hint={me?.superAdmin ? "E.164, comma separated" : "Linked by your AXO account manager"}>
+              <Input disabled={!me?.superAdmin} value={current.phoneNumbers.join(", ")} onChange={(e) => update({ phoneNumbers: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })} />
             </Field>
             {current.languages.map((l) => (
               <div key={l} className="col-span-2 grid grid-cols-2 gap-3 rounded-md border p-3">

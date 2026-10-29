@@ -2,9 +2,11 @@ import type { FastifyInstance } from "fastify";
 import { agentConfigSchema, memberSchema, orgPlatformSchema, orgSchema, PLAN_IDS, PLANS, type Org, type OrgPlatform } from "@axo/shared";
 import { AGENT_TEMPLATES } from "../../prompts/agents";
 import { requireSuperAdmin } from "../auth/auth";
+import { numberConflicts, syncPhoneRoutes } from "../calls/numbers";
 import { env } from "../config";
 import { global, newId, nowIso, platformOf, repo } from "../db/repo";
 import { encryptString, redactSecret } from "../lib/crypto";
+import { normalizePhone } from "../lib/mask";
 import { billing, monthStart, orgUsage } from "../platform/usage";
 
 type PlatformPatch = { [K in keyof OrgPlatform]?: Partial<OrgPlatform[K]> | OrgPlatform[K] };
@@ -28,7 +30,19 @@ async function orgRow(org: Org, month?: string) {
 export async function adminRoutes(app: FastifyInstance) {
   const admin = requireSuperAdmin();
 
-  app.get("/admin/me", { preHandler: admin }, async (req) => ({ superAdmin: true, email: req.auth?.email, messagingProvider: env.MESSAGING_PROVIDER, plans: PLANS }));
+  app.get("/admin/me", { preHandler: admin }, async (req) => ({
+    superAdmin: true,
+    email: req.auth?.email,
+    messagingProvider: env.MESSAGING_PROVIDER,
+    telephonyProvider: env.TELEPHONY_PROVIDER,
+    plans: PLANS,
+    // What to paste into the Meta app (WhatsApp > Configuration) and the telephony provider's number settings.
+    setup: {
+      whatsappWebhookUrl: `${env.PUBLIC_BASE_URL}/webhooks/whatsapp`,
+      whatsappVerifyToken: env.META_WA_VERIFY_TOKEN,
+      twilioVoiceUrl: `${env.PUBLIC_BASE_URL}/telephony/twilio/voice`,
+    },
+  }));
 
   /** All dealerships with this month's usage, billing estimate and totals. ?month=YYYY-MM */
   app.get("/admin/overview", { preHandler: admin }, async (req) => {
@@ -139,5 +153,32 @@ export async function adminRoutes(app: FastifyInstance) {
       await r.saveSettings({ secrets });
     }
     return orgRow(parsed.data);
+  });
+
+  /** Link calling numbers to the dealership's agents: { agents: { [agentId]: ["+9180…"] } }. Incoming calls to a number reach that agent. */
+  app.put("/admin/orgs/:id/numbers", { preHandler: admin }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await global.orgs().get(id))) return reply.code(404).send({ error: "Not found" });
+    const wanted = ((req.body ?? {}) as { agents?: Record<string, string[]> }).agents ?? {};
+    const r = repo(id);
+    const agents = await r.agents.list();
+    const seen = new Set<string>();
+    for (const [agentId, numbers] of Object.entries(wanted)) {
+      if (!agents.some((a) => a.id === agentId)) return reply.code(400).send({ error: `Unknown agent ${agentId}` });
+      for (const n of numbers) {
+        const norm = normalizePhone(n);
+        if (!/^\+\d{8,15}$/.test(norm)) return reply.code(400).send({ error: `"${n}" is not a valid phone number` });
+        if (seen.has(norm)) return reply.code(400).send({ error: `${n} is linked to two agents; give each number to one agent` });
+        seen.add(norm);
+      }
+    }
+    const conflicts = await numberConflicts(id, [...seen]);
+    if (conflicts.length) return reply.code(409).send({ error: conflicts.map((c) => `${c.number} is already linked to ${c.orgName}`).join("; ") });
+    for (const a of agents) {
+      if (!(a.id in wanted)) continue;
+      await r.agents.set({ ...a, phoneNumbers: [...new Set(wanted[a.id]!.map(normalizePhone))] });
+    }
+    await syncPhoneRoutes(id);
+    return { ok: true, agents: (await r.agents.list()).map((a) => ({ id: a.id, phoneNumbers: a.phoneNumbers })) };
   });
 }

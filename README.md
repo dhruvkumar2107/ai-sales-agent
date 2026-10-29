@@ -125,6 +125,7 @@ Twilio / Exotel ──media WS──► transport (mu-law 8k / PCM 8k  ⇄  PCM1
 
 - **All dealerships:** calls used vs plan, minutes, WhatsApp sent and chats, leads, revenue (plan + ₹6/call overage), your cost and profit, per month.
 - **Per dealership:** plan and custom price, switches (AI calls, outbound campaigns, WhatsApp, after-call WhatsApp, AI WhatsApp replies), monthly caps on outbound calls and messages, suspend/reactivate, their WhatsApp number (Meta phone number id + token, stored encrypted) and approved templates, contact and private notes, recent calls and messages, team and agents.
+- **Numbers, linked only by you:** each agent's incoming calling numbers (one number can belong to only one dealership; removed numbers stop routing), the caller number shown on outbound calls, and the dealership's own WhatsApp number. A dealership with its own WhatsApp phone number id + token sends through Meta for real even while `MESSAGING_PROVIDER=log`, so you can switch dealers live one at a time. The page shows the webhook URL and verify token to paste into Meta, and the Twilio voice URL. Dealers see their numbers read-only.
 - **Open their dashboard:** view and change anything in a dealership's own dashboard with owner rights (a banner shows you are in admin view).
 - **Add dealership:** creates the account, a starting agent, and an owner invite by email.
 

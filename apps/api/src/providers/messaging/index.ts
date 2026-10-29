@@ -133,7 +133,9 @@ async function sendMeta(to: string, body: string, o: NonNullable<SendOptions["me
  */
 export async function sendMessage(to: string, body: string, channel: Channel = "whatsapp", opts: SendOptions = {}): Promise<MessageResult> {
   try {
-    if (channel === "whatsapp" && env.MESSAGING_PROVIDER === "meta") return await sendMeta(to, body, opts.meta ?? {});
+    // A dealership with its own linked Meta number always sends for real, whatever the platform default is.
+    const ownNumber = Boolean(opts.meta?.phoneNumberId && opts.meta.token);
+    if (channel === "whatsapp" && (env.MESSAGING_PROVIDER === "meta" || ownNumber)) return await sendMeta(to, body, opts.meta ?? {});
     if (env.MESSAGING_PROVIDER === "twilio" && env.TWILIO_ACCOUNT_SID) return await sendTwilio(to, body, channel);
     if (env.MESSAGING_PROVIDER === "exotel" && env.EXOTEL_SID) return await sendExotelSms(to, body);
     if (channel === "sms" && env.MESSAGING_PROVIDER === "meta" && env.TWILIO_ACCOUNT_SID) return await sendTwilio(to, body, channel);

@@ -1,7 +1,7 @@
 import { checkCallable, TRANSACTIONAL_CAMPAIGNS, type BlockReason } from "../compliance/dnd";
 import { isWithinCallingHours, nextCallingTime } from "../compliance/calling-hours";
 import { getStore } from "../db/store";
-import { newId, nowIso, repo } from "../db/repo";
+import { global, newId, nowIso, platformOf, repo } from "../db/repo";
 import { logger } from "../lib/logger";
 import { maskPhone, normalizePhone } from "../lib/mask";
 import { checkCallAllowed } from "../platform/usage";
@@ -65,7 +65,8 @@ export async function placeOutboundCall(req: OutboundRequest): Promise<OutboundR
     createdAt: nowIso(),
   });
   try {
-    const providerCallId = await telephony().placeCall({ to, callId, orgId: req.orgId });
+    const callerId = platformOf(await global.orgs().get(req.orgId)).calling.callerId;
+    const providerCallId = await telephony().placeCall({ to, callId, orgId: req.orgId, from: callerId ? normalizePhone(callerId) : undefined });
     logger.info(`outbound call ${callId} placed to ${maskPhone(to)} via ${telephony().name}`);
     return { status: "placed", callId, providerCallId };
   } catch (err) {

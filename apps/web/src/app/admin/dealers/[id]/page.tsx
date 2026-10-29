@@ -19,21 +19,30 @@ interface Detail extends DealerRow {
 }
 
 /** Business-initiated messages that need an approved Meta template outside the 24 h chat window. */
+interface AdminMe {
+  messagingProvider: string;
+  telephonyProvider: string;
+  setup: { whatsappWebhookUrl: string; whatsappVerifyToken: string; twilioVoiceUrl: string };
+}
+
 const WA_TEMPLATES = ["post_call_followup", "testdrive_confirmation", "testdrive_reminder", "service_confirmation", "model_details", "showroom_location", "callback_notice", "booking_update", "review_request"];
 
 export default function DealerAdminPage({ params }: { params: { id: string } }) {
   const { data, error, reload } = useApi<Detail>(`/admin/orgs/${params.id}`, { refreshMs: 30000 });
+  const { data: adminMe } = useApi<AdminMe>("/admin/me");
   const [saving, setSaving] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const patch = async (section: string, body: Record<string, unknown>) => {
+  const patch = async (section: string, body: Record<string, unknown>, path = "", method = "PATCH") => {
     setSaving(section);
     setSaveError(null);
     try {
-      await api(`/admin/orgs/${params.id}`, { method: "PATCH", json: body });
+      await api(`/admin/orgs/${params.id}${path}`, { method, json: body });
       await reload();
+      return true;
     } catch (e) {
       setSaveError((e as Error).message);
+      return false;
     } finally {
       setSaving(null);
     }
@@ -79,7 +88,16 @@ export default function DealerAdminPage({ params }: { params: { id: string } }) 
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Controls org={org} saving={saving === "controls"} onSave={(b) => void patch("controls", b)} />
-        <WhatsappSetup platform={org.platform} token={data.whatsappToken} saving={saving === "whatsapp"} onSave={(b) => void patch("whatsapp", b)} />
+        <WhatsappSetup platform={org.platform} token={data.whatsappToken} adminMe={adminMe} saving={saving === "whatsapp"} onSave={(b) => void patch("whatsapp", b)} />
+        <CallingSetup
+          agents={data.agents}
+          platform={org.platform}
+          adminMe={adminMe}
+          saving={saving === "calling"}
+          onSave={async (numbers, callerId) => {
+            if (await patch("calling", { agents: numbers }, "/numbers", "PUT")) await patch("calling", { platform: { calling: { callerId } } });
+          }}
+        />
 
         <Card>
           <CardHeader>
@@ -219,21 +237,6 @@ export default function DealerAdminPage({ params }: { params: { id: string } }) 
             ))}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>AI agents</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            {data.agents.map((a) => (
-              <div key={a.id} className="flex justify-between gap-2">
-                <span>
-                  {a.name} <span className="text-xs text-muted-foreground">{humanize(a.kind)}</span>
-                </span>
-                <span className="text-xs text-muted-foreground">{a.phoneNumbers.join(", ") || "no number yet"}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
@@ -305,7 +308,7 @@ function Controls({ org, saving, onSave }: { org: DealerRow["org"]; saving: bool
   );
 }
 
-function WhatsappSetup({ platform, token, saving, onSave }: { platform: OrgPlatform; token: string; saving: boolean; onSave: (b: Record<string, unknown>) => void }) {
+function WhatsappSetup({ platform, token, adminMe, saving, onSave }: { platform: OrgPlatform; token: string; adminMe?: AdminMe; saving: boolean; onSave: (b: Record<string, unknown>) => void }) {
   const [wa, setWa] = useState(platform.whatsapp);
   const [tok, setTok] = useState(token);
   useEffect(() => {
@@ -316,10 +319,25 @@ function WhatsappSetup({ platform, token, saving, onSave }: { platform: OrgPlatf
   return (
     <Card>
       <CardHeader>
-        <CardTitle>WhatsApp number</CardTitle>
-        <CardDescription>Leave blank to use your platform WhatsApp number. Give a dealership its own number from Meta WhatsApp Business.</CardDescription>
+        <CardTitle className="flex items-center gap-2">
+          WhatsApp number
+          {!platform.features.whatsapp ? <Badge variant="warm">Turned off</Badge> : platform.whatsapp.phoneNumberId && token ? <Badge variant="success">Live: own number</Badge> : adminMe?.messagingProvider === "meta" ? <Badge variant="success">Live: platform number</Badge> : <Badge variant="secondary">Demo (not sent)</Badge>}
+        </CardTitle>
+        <CardDescription>Link this dealership&apos;s own WhatsApp Business number. Once the phone number ID and token are saved, their messages go out for real from that number.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        {adminMe && (
+          <div className="rounded-md bg-muted p-3 text-xs">
+            <p className="mb-1 font-medium">In the Meta app: WhatsApp &gt; Configuration &gt; Webhook</p>
+            <p>
+              Callback URL: <code className="select-all">{adminMe.setup.whatsappWebhookUrl}</code>
+            </p>
+            <p>
+              Verify token: <code className="select-all">{adminMe.setup.whatsappVerifyToken}</code>
+            </p>
+            <p className="mt-1 text-muted-foreground">Subscribe to the &quot;messages&quot; field. One webhook serves every dealership; replies are matched by phone number ID.</p>
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Display number">
             <Input value={wa.displayNumber} onChange={(e) => setWa({ ...wa, displayNumber: e.target.value })} placeholder="+91 98450 00000" />
@@ -388,6 +406,72 @@ function ContactNotes({ platform, saving, onSave }: { platform: OrgPlatform; sav
         <div className="flex justify-end">
           <Button disabled={saving} onClick={() => onSave({ platform: { contact, notes } })}>
             {saving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CallingSetup({
+  agents,
+  platform,
+  adminMe,
+  saving,
+  onSave,
+}: {
+  agents: Detail["agents"];
+  platform: OrgPlatform;
+  adminMe?: AdminMe;
+  saving: boolean;
+  onSave: (numbers: Record<string, string[]>, callerId: string) => Promise<void>;
+}) {
+  const toText = () => Object.fromEntries(agents.map((a) => [a.id, a.phoneNumbers.join(", ")]));
+  const [numbers, setNumbers] = useState<Record<string, string>>(toText);
+  const [callerId, setCallerId] = useState(platform.calling.callerId);
+  useEffect(() => {
+    setNumbers(toText());
+    setCallerId(platform.calling.callerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agents, platform]);
+  const linked = agents.some((a) => a.phoneNumbers.length);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          Calling numbers
+          {!platform.features.voiceCalls ? <Badge variant="warm">Turned off</Badge> : linked ? <Badge variant="success">Linked</Badge> : <Badge variant="secondary">No number yet</Badge>}
+        </CardTitle>
+        <CardDescription>Customers who call these numbers reach the AI agent. Buy the number on your {adminMe ? humanize(adminMe.telephonyProvider) : "telephony"} account, then link it here.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {!agents.length && <p className="text-sm text-muted-foreground">This dealership has no AI agent yet.</p>}
+        {agents.map((a) => (
+          <Field key={a.id} label={`${a.name} · ${humanize(a.kind)}${a.active ? "" : " (inactive)"}`} hint="Incoming numbers, comma separated, e.g. +918041234567">
+            <Input value={numbers[a.id] ?? ""} onChange={(e) => setNumbers({ ...numbers, [a.id]: e.target.value })} placeholder="+91 80 4123 4567" />
+          </Field>
+        ))}
+        <Field label="Outbound caller number" hint="Shown to customers when the AI calls them. Leave blank for your platform default.">
+          <Input value={callerId} onChange={(e) => setCallerId(e.target.value)} placeholder="+91 80 4123 4567" />
+        </Field>
+        {adminMe?.telephonyProvider === "twilio" && (
+          <p className="rounded-md bg-muted p-3 text-xs">
+            In Twilio, set each number&apos;s &quot;A call comes in&quot; webhook to <code className="select-all">{adminMe.setup.twilioVoiceUrl}</code> (HTTP POST).
+          </p>
+        )}
+        {adminMe?.telephonyProvider === "exotel" && <p className="rounded-md bg-muted p-3 text-xs">In Exotel, attach these numbers to your AXO call flow (the Voicebot applet).</p>}
+        <div className="flex justify-end">
+          <Button
+            disabled={saving}
+            onClick={() =>
+              void onSave(
+                Object.fromEntries(agents.map((a) => [a.id, (numbers[a.id] ?? "").split(",").map((n) => n.trim()).filter(Boolean)])),
+                callerId.trim(),
+              )
+            }
+          >
+            {saving ? "Saving…" : "Save numbers"}
           </Button>
         </div>
       </CardContent>

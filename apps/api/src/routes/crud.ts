@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Role } from "@axo/shared";
 import type { z } from "zod";
 import { orgOf, requireAuth } from "../auth/auth";
@@ -19,6 +19,8 @@ interface CrudOptions {
   /** Build the document id from the payload (e.g. slug); defaults to a random id */
   idFrom?: (body: Record<string, unknown>) => string | undefined;
   orderBy?: string;
+  /** Fields only the platform owner may set; other users' values are ignored */
+  adminOnly?: string[];
 }
 
 /** Register list/get/create/update/delete routes for a tenant collection, validated with zod. */
@@ -26,6 +28,12 @@ export function crudRoutes(app: FastifyInstance, o: CrudOptions) {
   const col = (orgId: string) => repo(orgId)[o.collection] as unknown as Collection<{ id: string } & Record<string, unknown>>;
   const read = requireAuth(...(o.readRoles ?? []));
   const write = requireAuth(...(o.writeRoles ?? ["owner", "sales_manager"]));
+  /** Drop admin-only fields from a non-admin's payload so stored values are kept. */
+  const writable = (req: FastifyRequest): Record<string, unknown> => {
+    const body = { ...((req.body ?? {}) as Record<string, unknown>) };
+    if (!req.auth?.superAdmin) for (const k of o.adminOnly ?? []) delete body[k];
+    return body;
+  };
 
   app.get(o.path, { preHandler: read }, async (req) => {
     const q = req.query as Record<string, string>;
@@ -40,7 +48,7 @@ export function crudRoutes(app: FastifyInstance, o: CrudOptions) {
 
   app.post(o.path, { preHandler: write }, async (req, reply) => {
     const orgId = orgOf(req);
-    const body = (req.body ?? {}) as Record<string, unknown>;
+    const body = writable(req);
     const id = (body.id as string) || o.idFrom?.(body) || newId(o.idPrefix);
     const parsed = o.schema.safeParse({ createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...body, id, orgId });
     if (!parsed.success) return reply.code(400).send({ error: "Validation failed", issues: parsed.error.issues });
@@ -52,7 +60,7 @@ export function crudRoutes(app: FastifyInstance, o: CrudOptions) {
     const { id } = req.params as { id: string };
     const cur = await col(orgId).get(id);
     if (!cur) return reply.code(404).send({ error: "Not found" });
-    const parsed = o.schema.safeParse({ ...cur, ...(req.body as object), id, orgId, updatedAt: new Date().toISOString() });
+    const parsed = o.schema.safeParse({ ...cur, ...writable(req), id, orgId, updatedAt: new Date().toISOString() });
     if (!parsed.success) return reply.code(400).send({ error: "Validation failed", issues: parsed.error.issues });
     return col(orgId).set(parsed.data as { id: string });
   });

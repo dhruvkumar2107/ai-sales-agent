@@ -10,8 +10,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
   HOST: z.string().default("0.0.0.0"),
   LOG_LEVEL: z.string().default("info"),
-  /** Public base URL of the API reachable by telephony providers (ngrok in dev), no trailing slash */
-  PUBLIC_BASE_URL: z.string().default("http://localhost:4000"),
+  /** Public base URL of the API reachable by telephony providers (ngrok in dev), no trailing slash; Render sets RENDER_EXTERNAL_URL */
+  PUBLIC_BASE_URL: z.string().default(process.env.RENDER_EXTERNAL_URL ?? "http://localhost:4000"),
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
 
   // Data / infra

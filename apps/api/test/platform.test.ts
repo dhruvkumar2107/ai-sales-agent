@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetStore } from "../src/db/store";
 import { global, platformOf, repo } from "../src/db/repo";
 import { DEMO_ORG_ID, installDemoOrg } from "../src/demo/fixtures";
@@ -141,5 +141,71 @@ describe("admin panel", () => {
     expect(await checkCallAllowed(DEMO_ORG_ID, "outbound")).toEqual({ ok: false, reason: "account suspended" });
     const msg = await sendOrgMessage({ orgId: DEMO_ORG_ID, to: CUSTOMER, body: "hi" });
     expect(msg.status).toBe("blocked");
+  });
+});
+
+describe("numbers linked in the admin panel", () => {
+  it("routes incoming calls to the linked agent, frees removed numbers and refuses another dealership's number", async () => {
+    const app = await buildServer();
+    const agent = (await repo(DEMO_ORG_ID).agents.list())[0]!;
+    const linked = await app.inject({ method: "PUT", url: `/admin/orgs/${DEMO_ORG_ID}/numbers`, payload: { agents: { [agent.id]: ["080 4123 4567", "+919845000001"] } } });
+    expect(linked.statusCode).toBe(200);
+    expect(await global.phoneRoutes().get("+918041234567")).toMatchObject({ orgId: DEMO_ORG_ID, agentId: agent.id });
+
+    await app.inject({ method: "PUT", url: `/admin/orgs/${DEMO_ORG_ID}/numbers`, payload: { agents: { [agent.id]: ["+918041234567"] } } });
+    expect(await global.phoneRoutes().get("+919845000001")).toBeNull();
+
+    const other = (await app.inject({ method: "POST", url: "/admin/orgs", payload: { name: "Other Motors" } })).json() as { id: string };
+    const otherAgent = (await repo(other.id).agents.list())[0]!;
+    const taken = await app.inject({ method: "PUT", url: `/admin/orgs/${other.id}/numbers`, payload: { agents: { [otherAgent.id]: ["+918041234567"] } } });
+    expect(taken.statusCode).toBe(409);
+    expect(taken.json().error).toMatch(/already linked/);
+    expect((await app.inject({ method: "PUT", url: `/admin/orgs/${other.id}/numbers`, payload: { agents: { [otherAgent.id]: ["12"] } } })).statusCode).toBe(400);
+  });
+
+  it("dealers cannot change their agents' numbers themselves", async () => {
+    const app = await buildServer();
+    const agent = (await repo(DEMO_ORG_ID).agents.list())[0]!;
+    const before = agent.phoneNumbers;
+    const { env } = await import("../src/config");
+    env.ADMIN_KEY = "test-admin-key"; // with an admin key set, the dev user is a plain dealer
+    try {
+      const res = await app.inject({ method: "PATCH", url: `/api/agents/${agent.id}`, payload: { name: "Renamed agent", phoneNumbers: ["+919999999999"] } });
+      expect(res.statusCode).toBe(200);
+    } finally {
+      env.ADMIN_KEY = "";
+    }
+    const after = (await repo(DEMO_ORG_ID).agents.get(agent.id))!;
+    expect(after.name).toBe("Renamed agent");
+    expect(after.phoneNumbers).toEqual(before);
+    expect(await global.phoneRoutes().get("+919999999999")).toBeNull();
+  });
+
+  it("outbound calls show the dealership's caller number", async () => {
+    await setPlatform({ calling: { callerId: "080 4123 4567" } });
+    const { placeOutboundCall } = await import("../src/calls/outbound");
+    const { telephony, MockTelephony } = await import("../src/providers/telephony");
+    const res = await placeOutboundCall({ orgId: DEMO_ORG_ID, to: CUSTOMER, ignoreCallingHours: true });
+    expect(res.status).toBe("placed");
+    const t = telephony();
+    expect(t).toBeInstanceOf(MockTelephony);
+    expect((t as InstanceType<typeof MockTelephony>).placed.at(-1)?.from).toBe("+918041234567");
+  });
+
+  it("a dealership with its own WhatsApp number sends through Meta even in demo mode", async () => {
+    const { encryptString } = await import("../src/lib/crypto");
+    await setPlatform({ whatsapp: { ...platformOf(null).whatsapp, phoneNumberId: "555000111" } });
+    await repo(DEMO_ORG_ID).saveSettings({ secrets: { metaWaToken: encryptString("EAAG-test") } });
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ messages: [{ id: "wamid.1" }] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const res = await sendOrgMessage({ orgId: DEMO_ORG_ID, to: CUSTOMER, body: "hello" });
+      expect(res.status).toBe("sent");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain("/555000111/messages");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer EAAG-test");
   });
 });

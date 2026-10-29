@@ -15,7 +15,7 @@ import { authenticate, HttpError, MANAGERS, orgOf, requireAuth } from "../auth/a
 import { global, newId, nowIso, repo } from "../db/repo";
 import { parseCatalogCsv } from "../integrations/csv-import";
 import { encryptString, redactSecret } from "../lib/crypto";
-import { normalizePhone } from "../lib/mask";
+import { syncPhoneRoutes } from "../calls/numbers";
 import { crudRoutes } from "./crud";
 
 const slug = (s: unknown) =>
@@ -86,16 +86,15 @@ export async function setupRoutes(app: FastifyInstance) {
   crudRoutes(app, { path: "/api/catalog", collection: "catalog", schema: catalogModelSchema, idFrom: (b) => `${slug(b.brand)}-${slug(b.model)}`, orderBy: "model" });
   crudRoutes(app, { path: "/api/offers", collection: "offers", schema: offerSchema, idPrefix: "of_" });
   crudRoutes(app, { path: "/api/test-drive-vehicles", collection: "testDriveVehicles", schema: testDriveVehicleSchema, idPrefix: "tdv_" });
-  crudRoutes(app, { path: "/api/agents", collection: "agents", schema: agentConfigSchema, idPrefix: "ag_", writeRoles: ["owner"] });
+  crudRoutes(app, { path: "/api/agents", collection: "agents", schema: agentConfigSchema, idPrefix: "ag_", writeRoles: ["owner"], adminOnly: ["phoneNumbers"] });
   crudRoutes(app, { path: "/api/customer-vehicles", collection: "customerVehicles", schema: customerVehicleSchema, idPrefix: "cv_" });
 
   app.get("/api/agent-templates", { preHandler: requireAuth() }, async (req) => AGENT_TEMPLATES.map((t) => ({ ...t, orgId: orgOf(req) })));
 
-  // When agents get phone numbers, keep the inbound routing table in sync.
+  // When agents change (numbers are linked by the platform owner), keep the inbound routing table in sync.
   app.addHook("onResponse", async (req, reply) => {
     if (!req.url.startsWith("/api/agents") || req.method === "GET" || reply.statusCode >= 300 || !req.auth?.orgId) return;
-    const agents = await repo(req.auth.orgId).agents.list();
-    for (const a of agents) for (const n of a.phoneNumbers) await global.phoneRoutes().set({ id: normalizePhone(n), orgId: a.orgId, agentId: a.id });
+    await syncPhoneRoutes(req.auth.orgId);
   });
 
   /** CSV catalog import. Body: raw CSV text (text/csv) or { csv } JSON. ?replace=true removes models not in the file. */

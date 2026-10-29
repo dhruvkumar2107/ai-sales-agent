@@ -58,6 +58,12 @@ export const orgPlatformSchema = z.object({
       templateLanguage: z.string().default("en"),
     })
     .default({}),
+  calling: z
+    .object({
+      /** Number shown to customers on outbound calls (must belong to the telephony account); empty = platform default */
+      callerId: z.string().default(""),
+    })
+    .default({}),
   contact: z.object({ name: z.string().default(""), phone: z.string().default(""), email: z.string().default("") }).default({}),
   /** Monthly price override in INR; 0 = plan list price */
   monthlyPrice: z.number().min(0).default(0),
