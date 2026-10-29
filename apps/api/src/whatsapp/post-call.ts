@@ -27,6 +27,15 @@ export async function sendPostCallWhatsapp(orgId: string, call: Call): Promise<b
   const sentTemplates = new Set(sent.map((m) => m.template));
   const parts: string[] = [];
 
+  if (org.business) {
+    const b = org.business;
+    const acknowledged = ["appointment_request", "order_received", "business_location"].some((t) => sentTemplates.has(t));
+    if (!acknowledged && (b.mapLink || b.address)) parts.push(`Find us at: ${b.mapLink || b.address}.`);
+    const res = await sendOrgMessage({ orgId, to: phone, template: "business_followup", vars: { showroom: org.showroomName, name: call.extracted.name ? `, ${call.extracted.name}` : "", details: parts.length ? `${parts.join(" ")}\n` : "" }, language: call.language, callId: call.id });
+    await attachCallContext(orgId, phone, call);
+    return res.ok;
+  }
+
   const model = call.extracted.interestedModel ? findModel(await r.catalog.list(), call.extracted.interestedModel) : null;
   if (model && !sentTemplates.has("model_details") && !sentTemplates.has("brochure")) {
     const v = modelDetailsVars(model, org.showroomName);
@@ -50,13 +59,18 @@ export async function sendPostCallWhatsapp(orgId: string, call: Call): Promise<b
     language: call.language,
     callId: call.id,
   });
+  await attachCallContext(orgId, phone, call);
+  return res.ok;
+}
 
+/** Put the call summary on the customer's WhatsApp thread so the chatbot carries on from the call. */
+async function attachCallContext(orgId: string, phone: string, call: Call) {
+  const r = repo(orgId);
   const conv = await r.conversations.get(conversationIdFor(phone));
   if (conv && call.summary) {
     const when = new Date(Date.parse(call.startedAt) + 5.5 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
     await r.conversations.update(conv.id, { callContext: `Phone call on ${when} IST (${call.outcome ?? "ended"}): ${call.summary}` });
   }
-  return res.ok;
 }
 
 export function wirePostCallWhatsapp() {

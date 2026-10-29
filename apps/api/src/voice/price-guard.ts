@@ -25,7 +25,14 @@ const MONEY_HINT = /₹|\brs\.?|\binr\b|rupee|rupaye|रुपये|ರೂಪ�
 
 /** Extract rupee amounts mentioned in a sentence. Compound forms ("12 lakh 90 thousand") are summed. */
 export function extractAmounts(sentence: string): number[] {
-  if (!MONEY_HINT.test(sentence)) return [];
+  return MONEY_HINT.test(sentence) ? parseAmounts(sentence) : [];
+}
+
+/**
+ * Every amount in free text, money words or not ("Haircut 250, facial 1,200"). For data the business wrote
+ * itself (business knowledge), so a figure from it is always allowed to be spoken.
+ */
+export function parseAmounts(sentence: string): number[] {
   const amounts: number[] = [];
   const re = /(\d[\d,]*(?:\.\d+)?)\s*(crore|करोड़|ಕೋಟಿ|lakhs?|lac|लाख|ಲಕ್ಷ|thousand|hazaa?r|हज़ार|हजार|ಸಾವಿರ|k\b)?/gi;
   let current: number | null = null;

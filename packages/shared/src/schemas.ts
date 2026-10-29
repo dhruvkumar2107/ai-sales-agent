@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  BUSINESS_ACTIONS,
   CALL_DIRECTIONS,
   CALL_OUTCOMES,
   CAMPAIGN_TYPES,
@@ -71,6 +72,25 @@ export const orgPlatformSchema = z.object({
 });
 export type OrgPlatform = z.infer<typeof orgPlatformSchema>;
 
+/** What the agent knows and may do for a non-showroom business. Present = the org uses the any-business agent. */
+export const businessProfileSchema = z.object({
+  /** BUSINESS_TYPES id */
+  type: z.string().default("other"),
+  /** What the agent calls the business type on calls, e.g. "dental clinic" */
+  typeLabel: z.string().default(""),
+  /** What the firm does, in a few sentences */
+  description: z.string().default(""),
+  /** Services, prices, FAQs and policies: the agent's only source of facts */
+  knowledge: z.string().default(""),
+  actions: z.array(z.enum(BUSINESS_ACTIONS)).default(["answer_questions", "capture_enquiry", "send_whatsapp_details", "transfer_to_staff"]),
+  address: z.string().default(""),
+  mapLink: z.string().default(""),
+  timings: z.string().default(""),
+  /** Where live transfers and new-request alerts go when no team member has a phone */
+  staffPhone: z.string().default(""),
+});
+export type BusinessProfile = z.infer<typeof businessProfileSchema>;
+
 export const orgSchema = z.object({
   id,
   name: z.string().min(1),
@@ -82,6 +102,7 @@ export const orgSchema = z.object({
   plan: z.enum(PLAN_IDS).default("trial"),
   status: z.enum(["active", "suspended"]).default("active"),
   platform: orgPlatformSchema.default({}),
+  business: businessProfileSchema.optional(),
 });
 export type Org = z.infer<typeof orgSchema>;
 

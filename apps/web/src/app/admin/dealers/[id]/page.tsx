@@ -7,6 +7,7 @@ import { PLAN_IDS, PLANS, type Call, type Message, type OrgPlatform } from "@axo
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Empty, ErrorNote, Field, Input, PageHeader, Select, Stat, Table, Td, Textarea, Th, Tr } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
 import { formatDateTime, formatDuration, formatINR, formatINR2, humanize, maskPhone } from "@/lib/utils";
+import { BusinessProfileCard, QuickConnectCard } from "../../business";
 import { FEATURE_LABELS, openDealerDashboard, type DealerRow } from "../../shared";
 
 interface Detail extends DealerRow {
@@ -25,7 +26,7 @@ interface AdminMe {
   setup: { whatsappWebhookUrl: string; whatsappVerifyToken: string; twilioVoiceUrl: string };
 }
 
-const WA_TEMPLATES = ["post_call_followup", "testdrive_confirmation", "testdrive_reminder", "service_confirmation", "model_details", "showroom_location", "callback_notice", "booking_update", "review_request"];
+const WA_TEMPLATES = ["post_call_followup", "business_followup", "appointment_request", "order_received", "business_details", "business_location", "testdrive_confirmation", "testdrive_reminder", "service_confirmation", "model_details", "showroom_location", "callback_notice", "booking_update", "review_request"];
 
 export default function DealerAdminPage({ params }: { params: { id: string } }) {
   const { data, error, reload } = useApi<Detail>(`/admin/orgs/${params.id}`, { refreshMs: 30000 });
@@ -56,7 +57,7 @@ export default function DealerAdminPage({ params }: { params: { id: string } }) 
   return (
     <div>
       <Link href="/admin" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> All dealerships
+        <ArrowLeft className="h-4 w-4" /> All businesses
       </Link>
       <PageHeader
         title={org.name}
@@ -87,6 +88,8 @@ export default function DealerAdminPage({ params }: { params: { id: string } }) 
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
+        {org.business && <BusinessProfileCard business={org.business} saving={saving === "business"} onSave={(b) => void patch("business", { business: b })} />}
+        <QuickConnectCard orgId={org.id} callNumber={data.agents.find((a) => a.phoneNumbers.length)?.phoneNumbers[0] ?? ""} whatsappNumber={org.platform.whatsapp.displayNumber} onConnected={() => void reload()} />
         <Controls org={org} saving={saving === "controls"} onSave={(b) => void patch("controls", b)} />
         <WhatsappSetup platform={org.platform} token={data.whatsappToken} adminMe={adminMe} saving={saving === "whatsapp"} onSave={(b) => void patch("whatsapp", b)} />
         <CallingSetup

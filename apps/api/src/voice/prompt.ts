@@ -1,5 +1,6 @@
 import type { AgentConfig, Branch, CatalogModel, Language, Offer, Org } from "@axo/shared";
 import { renderAutoPrompt } from "../../prompts/auto";
+import { renderBusinessPrompt } from "../../prompts/business";
 import type { Repo } from "../db/repo";
 import { LANGUAGE_NAMES } from "./language";
 
@@ -56,10 +57,13 @@ export interface BuiltPrompt {
   catalog: CatalogModel[];
   branches: Branch[];
   modelNames: string[];
+  /** Free-text facts the agent may quote (business knowledge); amounts in it pass the price guard */
+  knowledge: string;
 }
 
 /** Assemble the full system prompt for one call from the dealership's live configuration. */
 export async function buildSystemPrompt(r: Repo, org: Org, agent: AgentConfig, ctx: CallPromptContext): Promise<BuiltPrompt> {
+  if (org.business) return buildBusinessPrompt(org, agent, ctx);
   const [catalog, offers, branches] = await Promise.all([r.catalog.list({ orderBy: "model" }), r.offers.list(), r.branches.list()]);
   const brands = org.brands.length ? org.brands.join(", ") : [...new Set(catalog.map((m) => m.brand))].join(", ") || "multiple brands";
 
@@ -75,20 +79,34 @@ export async function buildSystemPrompt(r: Repo, org: Org, agent: AgentConfig, c
 
   if (agent.extraInstructions) system += `\n# Dealership-specific instructions\n${agent.extraInstructions}\n`;
 
+  const lines = callLines(ctx);
+  lines.splice(2, 0, `Branches (use the id in tools): ${branches.map((b) => `${b.name} = ${b.id}`).join("; ") || "none"}.`);
+  system += `\n# This call\n${lines.join("\n")}\n`;
+
+  const modelNames = catalog.flatMap((m) => [m.model, ...m.aliases]);
+  return { system, catalog, branches, modelNames, knowledge: "" };
+}
+
+function callLines(ctx: CallPromptContext): string[] {
   const nowIst = new Date(Date.now() + 5.5 * 3600_000);
   const lines = [
     `Today is ${DAY_NAMES[nowIst.getUTCDay()]}, ${nowIst.toISOString().slice(0, 10)}, and the time is ${nowIst.toISOString().slice(11, 16)} IST.`,
     `Call direction: ${ctx.direction}. Caller phone on record: ${ctx.callerPhone || "unknown"} (confirm it rather than asking them to recite it).`,
-    `Branches (use the id in tools): ${branches.map((b) => `${b.name} = ${b.id}`).join("; ") || "none"}.`,
   ];
   if (ctx.customerName) lines.push(`Customer name on record: ${ctx.customerName}.`);
   if (ctx.campaignType) lines.push(`This is an outbound ${ctx.campaignType.replace(/_/g, " ")} call. State the reason for calling in your first reply.`);
   if (ctx.campaignScript) lines.push(`Campaign brief: ${ctx.campaignScript}`);
   if (ctx.contactData && Object.keys(ctx.contactData).length) lines.push(`Customer record: ${Object.entries(ctx.contactData).map(([k, v]) => `${k}: ${v}`).join(", ")}.`);
-  system += `\n# This call\n${lines.join("\n")}\n`;
+  return lines;
+}
 
-  const modelNames = catalog.flatMap((m) => [m.model, ...m.aliases]);
-  return { system, catalog, branches, modelNames };
+/** Any-business agent: everything comes from the business profile the admin filled in. */
+function buildBusinessPrompt(org: Org, agent: AgentConfig, ctx: CallPromptContext): BuiltPrompt {
+  const b = org.business!;
+  let system = renderBusinessPrompt(b, { business_name: org.showroomName, agent_name: agent.name, language: LANGUAGE_NAMES[agent.defaultLanguage as Language] ?? "English" });
+  if (agent.extraInstructions) system += `\n# Extra instructions from the business\n${agent.extraInstructions}\n`;
+  system += `\n# This call\n${callLines(ctx).join("\n")}\n`;
+  return { system, catalog: [], branches: [], modelNames: [], knowledge: [b.description, b.knowledge, b.timings].join("\n") };
 }
 
 /** Opening line: recording disclosure + greeting, spoken without an LLM round-trip. */
@@ -120,7 +138,9 @@ export function buildGreeting(org: Org, agent: AgentConfig, lang: Language, ctx:
       },
     };
     const set = reason[lang === "hi" ? "hinglish" : lang] ?? reason.en!;
-    const why = set[ctx.campaignType ?? "new_lead_followup"] ?? set.new_lead_followup!;
+    const generic = lang === "en" || lang === "kn" ? "you recently enquired with us. Is this a good time to talk?" : "aapne haal hi mein humse enquiry ki thi. Kya abhi baat kar sakte hain?";
+    // Vehicle reasons (service due, PUC...) only make sense for showrooms; other businesses use the campaign brief.
+    const why = org.business ? generic : (set[ctx.campaignType ?? "new_lead_followup"] ?? set.new_lead_followup!);
     const intro =
       lang === "en" || lang === "kn"
         ? `Hello ${name}this is ${agent.name}, the AI assistant from ${org.showroomName}. ${disclosure} I'm calling because ${why}`

@@ -8,10 +8,10 @@ import { maskPhone, normalizePhone } from "../lib/mask";
 import { upsertLead } from "../leads/service";
 import { conversationIdFor, sendOrgMessage, touchConversation } from "../messaging/service";
 import { createLlm, type LlmContentBlock, type LlmMessage, type LlmProvider } from "../providers/llm";
-import { createToolRegistry, type ToolRegistry } from "../tools";
+import { toolRegistryFor, type ToolRegistry } from "../tools";
 import { detectLanguage } from "../voice/language";
 import { phrase } from "../voice/phrases";
-import { checkPrices, collectNumbers } from "../voice/price-guard";
+import { checkPrices, collectNumbers, parseAmounts } from "../voice/price-guard";
 import { buildSystemPrompt } from "../voice/prompt";
 
 type MessageContent = NonNullable<LlmMessage["content"]>;
@@ -23,7 +23,7 @@ const WHATSAPP_NOTE = `
 # Channel: WhatsApp chat (not a phone call)
 You are replying to WhatsApp messages, so ignore the phone-call specific rules above: no recording disclosure, no
 spoken-number formatting, no "end the call". Reply in short chat messages (1-4 sentences), in the customer's language
-and script. Write prices as ₹ figures (e.g. ₹12.9 lakh) taken only from the catalog or tool results. Do not use
+and script. Write prices as ₹ figures (e.g. ₹12.9 lakh) taken only from the catalog, business knowledge or tool results. Do not use
 transfer_to_human for a live transfer: it schedules a callback from the team, so say a person will call them shortly.
 Links, addresses and brochures can be pasted directly in your reply.
 `;
@@ -134,13 +134,14 @@ async function runChatTurn(orgId: string, phone: string, text: string, customerN
   collectNumbers((await r.offers.list()).map((o) => o.description), allowed);
   collectNumbers((await r.settings()).emi, allowed);
   collectNumbers(text, allowed);
+  for (const a of parseAmounts(built.knowledge)) allowed.add(a);
 
   const guess = detectLanguage(text).language;
   const language: Language = agent.languages.includes(guess) ? guess : guess === "hinglish" && agent.languages.includes("hi") ? "hi" : agent.defaultLanguage;
 
   const history: LlmMessage[] = trimHistory([...((conv.history as LlmMessage[]) ?? []), { role: "user", content: text }]);
   const llm = deps.llm ?? createLlm();
-  const tools = deps.tools ?? createToolRegistry();
+  const tools = deps.tools ?? toolRegistryFor(org);
   const ctx = {
     orgId,
     repo: r,
@@ -157,7 +158,7 @@ async function runChatTurn(orgId: string, phone: string, text: string, customerN
 
   const replyParts: string[] = [];
   for (let round = 0; round < 5; round++) {
-    const res = await llm.streamTurn({ system, messages: history, tools: tools.defs(), hints: { models: built.modelNames, agentKind: agent.kind, callerPhone: phone }, onText: () => undefined });
+    const res = await llm.streamTurn({ system, messages: history, tools: tools.defs(), hints: { models: built.modelNames, agentKind: agent.kind, callerPhone: phone, business: org.business }, onText: () => undefined });
     history.push({ role: "assistant", content: res.content.length ? (res.content as MessageContent) : [{ type: "text", text: "..." }] });
     if (res.text.trim()) replyParts.push(res.text.trim());
     if (!res.toolUses.length) break;

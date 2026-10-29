@@ -38,6 +38,30 @@ export const TEMPLATES = {
     en: "Thank you for calling {showroom}{name}! {details}You can reply here on WhatsApp anytime for prices, EMI or to book a test drive.",
     hi: "{showroom} को कॉल करने के लिए धन्यवाद{name}! {details}कीमत, EMI या टेस्ट ड्राइव के लिए कभी भी यहीं WhatsApp पर जवाब दें।",
   },
+  appointment_request: {
+    en: "Hi {name}, we've received your appointment request at {showroom} for {purpose} on {date} at {time}. Our team will confirm it shortly. {address}",
+    hi: "नमस्ते {name}, {showroom} में {purpose} के लिए {date} को {time} बजे का आपका अपॉइंटमेंट अनुरोध मिल गया है। हमारी टीम जल्द ही कन्फ़र्म करेगी। {address}",
+  },
+  order_received: {
+    en: "Hi {name}, thank you for your order with {showroom}: {items} ({fulfilment}). Our team will confirm the total and timing shortly.",
+    hi: "नमस्ते {name}, {showroom} पर ऑर्डर के लिए धन्यवाद: {items} ({fulfilment})। हमारी टीम जल्द ही कुल राशि और समय कन्फ़र्म करेगी।",
+  },
+  business_details: {
+    en: "{showroom}\n{details}\nReply here anytime with your questions.",
+    hi: "{showroom}\n{details}\nकोई भी सवाल हो तो यहीं जवाब दें।",
+  },
+  business_location: {
+    en: "{showroom}\nAddress: {address}\nMap: {map}\nTimings: {timings}\nPhone: {phone}",
+    hi: "{showroom}\nपता: {address}\nमैप: {map}\nसमय: {timings}\nफ़ोन: {phone}",
+  },
+  business_followup: {
+    en: "Thank you for calling {showroom}{name}! {details}You can reply here on WhatsApp anytime.",
+    hi: "{showroom} को कॉल करने के लिए धन्यवाद{name}! {details}कभी भी यहीं WhatsApp पर जवाब दें।",
+  },
+  staff_new_request: {
+    en: "NEW {kind}: {name} ({phone}). {details}",
+    hi: "NEW {kind}: {name} ({phone}). {details}",
+  },
   exec_hot_lead: {
     en: "HOT LEAD: {name} ({phone}) wants {model}. Reason: {reason}. Call back within 5 minutes.",
     hi: "HOT LEAD: {name} ({phone}) wants {model}. Reason: {reason}. Call back within 5 minutes.",

@@ -47,6 +47,8 @@ const envSchema = z.object({
   // Meta WhatsApp Cloud API (platform default number; dealers can get their own number id from the admin panel)
   META_WA_TOKEN: z.string().optional(),
   META_WA_PHONE_NUMBER_ID: z.string().optional(),
+  /** WhatsApp Business Account id: lets the admin panel find a number's phone number id from the number alone */
+  META_WABA_ID: z.string().optional(),
   META_WA_VERIFY_TOKEN: z.string().default("axo-verify"),
   META_APP_SECRET: z.string().optional(),
   META_GRAPH_VERSION: z.string().default("v21.0"),

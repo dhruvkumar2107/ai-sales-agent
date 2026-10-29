@@ -7,6 +7,7 @@ import { PLAN_IDS, PLANS } from "@axo/shared";
 import { Badge, Button, Card, Dialog, Empty, ErrorNote, Field, Input, PageHeader, Select, Stat, Table, Td, Th, Tr } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
 import { formatDateTime, formatINR } from "@/lib/utils";
+import { AddBusinessDialog } from "./business";
 import { openDealerDashboard, type DealerRow } from "./shared";
 
 interface Overview {
@@ -19,25 +20,29 @@ export default function AdminOverviewPage() {
   const [month, setMonth] = useState("");
   const { data, error, reload } = useApi<Overview>(`/admin/overview${month ? `?month=${month}` : ""}`, { refreshMs: 30000 });
   const [creating, setCreating] = useState(false);
+  const [addingBusiness, setAddingBusiness] = useState(false);
   const t = data?.totals;
 
   return (
     <div>
       <PageHeader
-        title="Dealerships"
-        description="Every dealership you've sold to: usage, what they owe you, your cost and profit"
+        title="Businesses"
+        description="Every business you've sold to: usage, what they owe you, your cost and profit"
         actions={
           <>
             <Input type="month" className="w-40" value={month || data?.month || ""} onChange={(e) => setMonth(e.target.value)} aria-label="Month" />
-            <Button onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" /> Add dealership
+            <Button variant="outline" onClick={() => setCreating(true)}>
+              Add vehicle showroom
+            </Button>
+            <Button onClick={() => setAddingBusiness(true)}>
+              <Plus className="h-4 w-4" /> Add business
             </Button>
           </>
         }
       />
       <ErrorNote error={error} />
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
-        <Stat label="Dealerships" value={t ? `${t.active}/${t.dealers}` : "-"} hint="active / total" />
+        <Stat label="Businesses" value={t ? `${t.active}/${t.dealers}` : "-"} hint="active / total" />
         <Stat label="Calls" value={t?.calls ?? "-"} hint={t ? `${t.minutes} minutes` : undefined} />
         <Stat label="WhatsApp sent" value={t?.messages ?? "-"} hint={t ? `${t.whatsappChats} chats` : undefined} />
         <Stat label="Leads" value={t?.leads ?? "-"} hint={t ? `${t.testDrives} test drives` : undefined} />
@@ -49,14 +54,14 @@ export default function AdminOverviewPage() {
       <Card>
         {!data?.dealers.length ? (
           <div className="p-5">
-            <Empty>No dealerships yet. Click "Add dealership" to onboard your first customer.</Empty>
+            <Empty>No businesses yet. Click "Add business" to onboard your first customer.</Empty>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <Table>
               <thead>
                 <Tr>
-                  <Th>Dealership</Th>
+                  <Th>Business</Th>
                   <Th>Plan</Th>
                   <Th>Calls used</Th>
                   <Th>Minutes</Th>
@@ -130,6 +135,7 @@ export default function AdminOverviewPage() {
         )}
       </Card>
       <CreateDealer open={creating} onClose={() => setCreating(false)} onCreated={() => void reload()} />
+      <AddBusinessDialog open={addingBusiness} onClose={() => setAddingBusiness(false)} onCreated={() => void reload()} />
     </div>
   );
 }
@@ -157,7 +163,7 @@ function CreateDealer({ open, onClose, onCreated }: { open: boolean; onClose: ()
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Add dealership">
+    <Dialog open={open} onClose={onClose} title="Add vehicle showroom">
       <ErrorNote error={error} />
       <form onSubmit={submit} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">

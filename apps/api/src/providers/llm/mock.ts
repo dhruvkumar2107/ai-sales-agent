@@ -130,6 +130,87 @@ function dateFromOffset(offset: number): string {
 const sayDate = (lang: Lang, iso: string) => speakDate(iso, lang === "hi" ? "hinglish" : "en");
 const sayTime = (lang: Lang, hhmm: string) => speakTime(hhmm, lang === "hi" ? "hinglish" : "en");
 
+interface BusinessHint {
+  knowledge: string;
+  description: string;
+  actions: string[];
+}
+
+const BRX = {
+  appointment: /appointment|book|slot|visit|consult|check.?up|trial|demo class|reserve|table for|milna|aana hai/i,
+  order: /\border\b|deliver|home delivery|parcel|takeaway|mangwa|bhej do/i,
+  person: /talk to (a |the )?(person|human|someone|manager|owner|doctor)|real person|insaan|manager se|connect me/i,
+};
+const STOP = new Set(["what", "when", "where", "your", "with", "have", "this", "that", "there", "please", "tell", "about", "kya", "hai", "hain", "kitna", "kitne", "the", "for", "and", "you", "can", "how", "much", "does", "is"]);
+
+/** Best line of the business knowledge for the caller's question, by shared words. */
+function answerFrom(knowledge: string, question: string): string | undefined {
+  const words = question.toLowerCase().match(/[a-zऀ-ॿ]{3,}/g)?.filter((w) => !STOP.has(w)) ?? [];
+  let best: { line: string; score: number } | undefined;
+  for (const line of knowledge.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const lower = line.toLowerCase();
+    const score = words.filter((w) => lower.includes(w.replace(/s$/, ""))).length;
+    if (score && (!best || score > best.score)) best = { line, score };
+  }
+  return best?.line;
+}
+
+/** Offline any-business flow: answer from the business knowledge, book, order, send details, hand over. */
+function decideBusiness(
+  b: BusinessHint,
+  o: LlmStreamOptions,
+  s: { last: string; all: string; texts: string[]; lang: Lang; ent: ReturnType<typeof extract>; called: Set<string>; callerPhone: string },
+): { text: string; tools: { name: string; input: unknown }[] } {
+  const { last, all, texts, lang, ent, called } = s;
+  const can = (a: string) => b.actions.includes(a);
+  if (RX.optout.test(last)) return { text: "", tools: [{ name: "record_opt_out", input: { reason: "caller_request" } }] };
+  if (RX.wrong.test(last)) return { text: t(lang, "Sorry for the trouble. Have a great day!", "Maaf kijiye, aapka din shubh ho!"), tools: [{ name: "end_call", input: { outcome: "wrong_number" } }] };
+  if (RX.done.test(last) && texts.length > 1) {
+    const outcome = called.has("book_appointment") ? "appointment_booked" : called.has("take_order") ? "order_taken" : called.has("save_enquiry") ? "lead_captured" : called.has("create_ticket") ? "complaint_logged" : "info_provided";
+    return { text: t(lang, "Thank you for calling. Have a wonderful day!", "Call karne ke liye dhanyavaad. Aapka din shubh ho!"), tools: [{ name: "end_call", input: { outcome } }] };
+  }
+  if (RX.angry.test(last) && can("complaints") && !called.has("create_ticket")) return { text: "", tools: [{ name: "create_ticket", input: { category: "other", description: last.slice(0, 300), severity: "high" } }] };
+  if (BRX.person.test(last) || RX.hot.test(last)) {
+    if (can("transfer_to_staff")) return { text: t(lang, "Sure, let me connect you to our team.", "Zaroor, main aapko team se jod rahi hoon."), tools: [{ name: "transfer_to_human", input: { reason: last.slice(0, 200), department: "sales", priority: "instant" } }] };
+    return { text: "", tools: [{ name: "request_callback", input: { reason: last.slice(0, 200), urgent: true } }] };
+  }
+  if (RX.sendWa.test(last) && can("send_whatsapp_details")) {
+    if (RX.location.test(last)) return { text: "", tools: [{ name: "send_whatsapp_details", input: { topic: "location" } }] };
+    const summary = b.knowledge.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 5).join("\n");
+    return { text: "", tools: [{ name: "send_whatsapp_details", input: { topic: "details", summary } }] };
+  }
+
+  const flow = can("take_order") && texts.some((x) => BRX.order.test(x)) ? "order" : can("book_appointment") && texts.some((x) => BRX.appointment.test(x)) ? "appointment" : null;
+  if (flow === "appointment" && !called.has("book_appointment")) {
+    const purposeText = texts.find((x) => BRX.appointment.test(x)) ?? last;
+    const purpose = answerFrom(b.knowledge, purposeText)?.split(/[:(,]/)[0]?.trim() || "appointment";
+    if (!ent.name) return { text: t(lang, "Sure, I can book that. May I have your name please?", "Zaroor, book kar deti hoon. Aapka naam bataiye?"), tools: [] };
+    if (ent.day === undefined || !ent.time) return { text: t(lang, "Which day and time would suit you?", "Aapke liye kaunsa din aur time theek rahega?"), tools: [] };
+    const date = dateFromOffset(ent.day);
+    const confirmedBefore = o.messages.some((m) => m.role === "assistant" && /confirm|pakka/i.test(textOf(m)));
+    if (!confirmedBefore) return { text: t(lang, `Just to confirm, ${ent.name}, ${purpose} on ${sayDate(lang, date)} at ${sayTime(lang, ent.time)}. Shall I confirm?`, `Confirm kar doon, ${ent.name} ji, ${purpose} ${sayDate(lang, date)} ko ${sayTime(lang, ent.time)}. Pakka karoon?`), tools: [] };
+    if (!RX.yes.test(last)) return { text: t(lang, "No problem, what time would you prefer?", "Koi baat nahi, kaunsa time theek rahega?"), tools: [] };
+    return { text: "", tools: [{ name: "book_appointment", input: { purpose, date, time: ent.time, customer_name: ent.name, phone: ent.phone ?? s.callerPhone } }] };
+  }
+  if (flow === "order" && !called.has("take_order")) {
+    const items = texts.find((x) => BRX.order.test(x)) ?? last;
+    if (!ent.name) return { text: t(lang, "Sure! May I have your name for the order?", "Zaroor! Order ke liye aapka naam?"), tools: [] };
+    const delivery = /deliver|home|ghar/i.test(all);
+    const address = all.match(/(?:address is|deliver to|address:?)\s+([^.\n]+)/i)?.[1];
+    if (delivery && !address) return { text: t(lang, "And the delivery address please?", "Aur delivery address?"), tools: [] };
+    return { text: "", tools: [{ name: "take_order", input: { items: items.slice(0, 200), fulfilment: delivery ? "delivery" : "pickup", address, customer_name: ent.name } }] };
+  }
+
+  if (RX.greetingOnly.test(last) || !last) return { text: t(lang, "Hello! How can I help you today?", "Namaste! Bataiye, main aapki kya madad kar sakti hoon?"), tools: [] };
+  if (ent.name && can("capture_enquiry") && !called.has("save_enquiry")) return { text: "", tools: [{ name: "save_enquiry", input: { name: ent.name, need: answerFrom(b.knowledge, all)?.split(/[:(,]/)[0]?.trim() || last.slice(0, 80), score: "warm" } }] };
+  const answer = answerFrom(b.knowledge, last) ?? answerFrom(b.description, last);
+  if (answer) return { text: `${answer.replace(/\s+/g, " ").replace(/[.]?$/, ".")} ${t(lang, "Anything else you'd like to know?", "Aur kuch jaanna chahenge?")}`, tools: [] };
+  return {
+    text: "",
+    tools: [can("transfer_to_staff") ? { name: "transfer_to_human", input: { reason: `Question: ${last.slice(0, 200)}`, department: "sales", priority: "normal" } } : { name: "request_callback", input: { reason: `Question: ${last.slice(0, 200)}` } }],
+  };
+}
+
 export class MockLlm implements LlmProvider {
   readonly name = "mock";
 
@@ -175,6 +256,9 @@ export class MockLlm implements LlmProvider {
 
     // ---------- respond to tool results ----------
     if (results.length) return this.afterTools(results, lang, ent, called);
+
+    const business = o.hints?.business as BusinessHint | undefined;
+    if (business) return decideBusiness(business, o, { last, all, texts, lang, ent, called, callerPhone });
 
     // ---------- respond to caller utterance ----------
     if (RX.optout.test(last)) return { text: "", tools: [{ name: "record_opt_out", input: { reason: "caller_request" } }] };
@@ -316,6 +400,19 @@ export class MockLlm implements LlmProvider {
         return { text: t(lang, "Thank you for your feedback! Have a great day.", "Aapke feedback ke liye dhanyavaad! Aapka din shubh ho."), tools: [{ name: "end_call", input: { outcome: "feedback_recorded" } }] };
       case "end_call":
         return { text: "", tools: [] };
+      case "book_appointment":
+        if (!res.booked) return { text: t(lang, "That time doesn't work. Could you suggest another time?", "Woh time nahi ho payega. Koi aur time batayenge?"), tools: [] };
+        return { text: t(lang, `Done! Your request for ${sayDate(lang, String(res.date))} at ${sayTime(lang, String(res.time))} is noted, and the team will confirm it shortly on WhatsApp. Anything else?`, `Ho gaya! ${sayDate(lang, String(res.date))} ko ${sayTime(lang, String(res.time))} ki request note ho gayi hai, team WhatsApp par confirm karegi. Aur kuch?`), tools: [] };
+      case "take_order":
+        if (!res.placed) return { text: String(res.note ?? t(lang, "Could you share the delivery address?", "Delivery address batayenge?")), tools: [] };
+        return { text: t(lang, "Your order is noted. The team will confirm the total and timing shortly. Anything else?", "Aapka order note ho gaya hai. Team total aur time jaldi confirm karegi. Aur kuch?"), tools: [] };
+      case "save_enquiry":
+        return { text: t(lang, "Thank you, I've noted your details. Anything else I can help with?", "Dhanyavaad, maine details note kar li hain. Aur kuch madad chahiye?"), tools: [] };
+      case "request_callback":
+        return { text: t(lang, "I've asked the team to call you back shortly. Anything else?", "Maine team ko callback ke liye bol diya hai. Aur kuch?"), tools: [] };
+      case "send_whatsapp_details":
+        if (!res.sent) return { text: t(lang, "Sorry, I couldn't send that right now. The team will share it with you.", "Maaf kijiye, abhi bhej nahi paayi. Team aapko bhej degi."), tools: [] };
+        return { text: t(lang, "Done, I've sent it to you on WhatsApp. Anything else I can help with?", "Ho gaya, maine WhatsApp par bhej diya hai. Aur kuch madad chahiye?"), tools: [] };
       case "send_whatsapp_or_sms":
         if (!res.sent) return { text: t(lang, "Sorry, I couldn't send that right now. Our team will share it with you.", "Maaf kijiye, abhi bhej nahi paayi. Team aapko bhej degi."), tools: [] };
         return { text: t(lang, "Done, I've sent it to you on WhatsApp. Anything else I can help with?", "Ho gaya, maine WhatsApp par bhej diya hai. Aur kuch madad chahiye?"), tools: [] };

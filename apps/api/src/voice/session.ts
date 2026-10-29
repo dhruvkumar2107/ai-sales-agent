@@ -12,10 +12,10 @@ import { maskPhone } from "../lib/mask";
 import { createLlm, type LlmContentBlock, type LlmMessage, type LlmProvider } from "../providers/llm";
 import { createStt, type SttProvider, type SttStream, type TranscriptEvent } from "../providers/stt";
 import { createTts, type TtsProvider } from "../providers/tts";
-import { createToolRegistry, type ToolContext, type ToolRegistry } from "../tools";
+import { toolRegistryFor, type ToolContext, type ToolRegistry } from "../tools";
 import { SentenceChunker } from "./chunker";
 import { detectLanguage, LANGUAGE_NAMES } from "./language";
-import { checkPrices, collectNumbers, extractAmounts } from "./price-guard";
+import { checkPrices, collectNumbers, extractAmounts, parseAmounts } from "./price-guard";
 import { phrase } from "./phrases";
 import { buildGreeting, buildSystemPrompt, type CallPromptContext } from "./prompt";
 import { formatForSpeech } from "./speech-format";
@@ -136,7 +136,7 @@ export class CallSession extends EventEmitter {
   private llm: LlmProvider;
   private sttProvider: SttProvider;
   private tts: TtsProvider;
-  private tools: ToolRegistry;
+  private tools!: ToolRegistry;
   private stt: SttStream | null = null;
   private vad = new Vad();
   private recorder = new CallRecorder();
@@ -183,7 +183,6 @@ export class CallSession extends EventEmitter {
     this.llm = o.llm ?? createLlm();
     this.sttProvider = o.stt ?? createStt();
     this.tts = o.tts ?? createTts();
-    this.tools = o.tools ?? createToolRegistry();
     this.silenceMs = o.silenceMs ?? env.SILENCE_REPROMPT_MS;
     this.maxReprompts = o.maxReprompts ?? env.MAX_REPROMPTS;
     this.language = o.language ?? "en";
@@ -199,6 +198,7 @@ export class CallSession extends EventEmitter {
     const org = await global.orgs().get(this.o.orgId);
     if (!org) throw new Error(`Unknown org ${this.o.orgId}`);
     this.org = org;
+    this.tools = this.o.tools ?? toolRegistryFor(org);
     const agents = await this.r.agents.list({ where: { active: true } });
     this.agent = (this.o.agentId && agents.find((a) => a.id === this.o.agentId)) || agents[0] || agentConfigSchema.parse({ ...AGENT_TEMPLATES[1], orgId: org.id });
     if (!this.o.language) this.language = this.agent.defaultLanguage;
@@ -215,6 +215,7 @@ export class CallSession extends EventEmitter {
     this.system = built.system;
     this.modelNames = built.modelNames;
     collectNumbers(built.catalog, this.allowedNumbers);
+    for (const a of parseAmounts(built.knowledge)) this.allowedNumbers.add(a);
     collectNumbers((await this.r.offers.list()).map((x) => x.description), this.allowedNumbers);
     const settings = await this.r.settings();
     collectNumbers(settings.emi, this.allowedNumbers);
@@ -453,7 +454,7 @@ export class CallSession extends EventEmitter {
         messages: this.history,
         tools: this.tools.defs(),
         signal,
-        hints: { models: this.modelNames, agentKind: this.agent.kind, callerPhone: this.o.callerPhone },
+        hints: { models: this.modelNames, agentKind: this.agent.kind, callerPhone: this.o.callerPhone, business: this.org.business },
         onText: (delta) => {
           if (signal.aborted) return;
           turn.firstTokenAt ??= Date.now();

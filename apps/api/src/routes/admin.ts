@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { agentConfigSchema, memberSchema, orgPlatformSchema, orgSchema, PLAN_IDS, PLANS, type Org, type OrgPlatform } from "@axo/shared";
+import { agentConfigSchema, businessProfileSchema, LANGUAGES, memberSchema, orgPlatformSchema, orgSchema, PLAN_IDS, PLANS, type BusinessProfile, type Language, type Org, type OrgPlatform } from "@axo/shared";
 import { AGENT_TEMPLATES } from "../../prompts/agents";
+import { businessAgentDefaults } from "../../prompts/business";
 import { requireSuperAdmin } from "../auth/auth";
+import { checkNumbers, connectNumbers } from "../calls/connect";
 import { numberConflicts, syncPhoneRoutes } from "../calls/numbers";
 import { env } from "../config";
 import { global, newId, nowIso, platformOf, repo } from "../db/repo";
@@ -41,6 +43,11 @@ export async function adminRoutes(app: FastifyInstance) {
       whatsappWebhookUrl: `${env.PUBLIC_BASE_URL}/webhooks/whatsapp`,
       whatsappVerifyToken: env.META_WA_VERIFY_TOKEN,
       twilioVoiceUrl: `${env.PUBLIC_BASE_URL}/telephony/twilio/voice`,
+    },
+    // What "Connect" can do on its own with the server's provider settings.
+    automation: {
+      calls: env.TELEPHONY_PROVIDER === "twilio" && Boolean(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN),
+      whatsapp: Boolean(env.META_WA_TOKEN && env.META_WABA_ID),
     },
   }));
 
@@ -100,12 +107,34 @@ export async function adminRoutes(app: FastifyInstance) {
     };
   });
 
-  /** Onboard a new dealership: org, default settings, a starter agent, and an owner invite by email. */
+  /**
+   * Onboard a new customer: org, default settings, an agent, and an owner invite by email.
+   * With `business`, it is any kind of business (clinic, salon, shop...) and gets an agent built from that profile;
+   * `callNumber` / `whatsappNumber` are then linked straight away, so the agent is ready on both channels.
+   */
   app.post("/admin/orgs", { preHandler: admin }, async (req, reply) => {
-    const b = (req.body ?? {}) as { name?: string; showroomName?: string; plan?: string; ownerEmail?: string; ownerName?: string; ownerPhone?: string; agentTemplate?: string };
-    if (!b.name?.trim()) return reply.code(400).send({ error: "Dealership name is required" });
+    const b = (req.body ?? {}) as {
+      name?: string;
+      showroomName?: string;
+      plan?: string;
+      ownerEmail?: string;
+      ownerName?: string;
+      ownerPhone?: string;
+      agentTemplate?: string;
+      business?: Partial<BusinessProfile>;
+      agent?: { name?: string; languages?: string[]; defaultLanguage?: string; voice?: "female" | "male" };
+      callNumber?: string;
+      whatsappNumber?: string;
+    };
+    if (!b.name?.trim()) return reply.code(400).send({ error: "Business name is required" });
     if (b.plan && !PLAN_IDS.includes(b.plan as (typeof PLAN_IDS)[number])) return reply.code(400).send({ error: "Unknown plan" });
+    const business = b.business ? businessProfileSchema.safeParse(b.business) : undefined;
+    if (business && !business.success) return reply.code(400).send({ error: "Validation failed", issues: business.error.issues });
     const orgId = newId("org_");
+    const numbers = { callNumber: b.callNumber?.trim() || undefined, whatsappNumber: b.whatsappNumber?.trim() || undefined };
+    const numberError = await checkNumbers(orgId, numbers);
+    if (numberError) return reply.code(400).send({ error: numberError });
+
     const org = orgSchema.parse({
       id: orgId,
       name: b.name.trim(),
@@ -113,19 +142,41 @@ export async function adminRoutes(app: FastifyInstance) {
       createdAt: nowIso(),
       plan: b.plan ?? "trial",
       platform: { contact: { name: b.ownerName ?? "", phone: b.ownerPhone ?? "", email: b.ownerEmail ?? "" } },
+      business: business?.data,
     });
     await global.orgs().set(org);
     const r = repo(orgId);
     await r.saveSettings({});
-    const template = AGENT_TEMPLATES.find((t) => t.id === b.agentTemplate) ?? AGENT_TEMPLATES[1]!;
-    await r.agents.set(agentConfigSchema.parse({ ...template, id: newId("ag_"), orgId }));
+    if (business) {
+      const picked = (b.agent?.languages ?? []).filter((l): l is Language => (LANGUAGES as readonly string[]).includes(l));
+      const languages: Language[] = picked.length ? picked : ["en", "hi"];
+      const wanted = b.agent?.defaultLanguage as Language;
+      const name = b.agent?.name?.trim() || "Asha";
+      await r.agents.set(agentConfigSchema.parse({ id: newId("ag_"), orgId, name, kind: "combined", languages, defaultLanguage: languages.includes(wanted) ? wanted : languages[0], ...businessAgentDefaults(name, languages, b.agent?.voice ?? "female") }));
+    } else {
+      const template = AGENT_TEMPLATES.find((t) => t.id === b.agentTemplate) ?? AGENT_TEMPLATES[1]!;
+      await r.agents.set(agentConfigSchema.parse({ ...template, id: newId("ag_"), orgId }));
+    }
     if (b.ownerEmail) {
       const email = b.ownerEmail.trim().toLowerCase();
       const invite = memberSchema.parse({ id: `invite:${email}`, orgId, email, name: b.ownerName || email, role: "owner", phone: b.ownerPhone || undefined, createdAt: nowIso() });
       await global.users().set(invite);
       await r.members.set(invite);
     }
-    return org;
+    const setup = numbers.callNumber || numbers.whatsappNumber ? await connectNumbers(orgId, numbers) : {};
+    return { ...((await global.orgs().get(orgId)) ?? org), setup };
+  });
+
+  /** Link a calling and/or WhatsApp number and configure the providers where possible; reports what is ready. */
+  app.post("/admin/orgs/:id/connect", { preHandler: admin }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!(await global.orgs().get(id))) return reply.code(404).send({ error: "Not found" });
+    const b = (req.body ?? {}) as { callNumber?: string; whatsappNumber?: string };
+    const numbers = { callNumber: b.callNumber?.trim() || undefined, whatsappNumber: b.whatsappNumber?.trim() || undefined };
+    if (!numbers.callNumber && !numbers.whatsappNumber) return reply.code(400).send({ error: "Enter a calling or WhatsApp number" });
+    const error = await checkNumbers(id, numbers);
+    if (error) return reply.code(400).send({ error });
+    return connectNumbers(id, numbers);
   });
 
   /** Plan, status, platform switches / limits / WhatsApp number, profile. */
@@ -133,10 +184,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const org = await global.orgs().get(id);
     if (!org) return reply.code(404).send({ error: "Not found" });
-    const b = (req.body ?? {}) as { name?: string; showroomName?: string; plan?: string; status?: string; platform?: PlatformPatch; whatsappToken?: string };
+    const b = (req.body ?? {}) as { name?: string; showroomName?: string; plan?: string; status?: string; platform?: PlatformPatch; whatsappToken?: string; business?: Partial<BusinessProfile> };
     const cur = platformOf(org);
     const platform = b.platform ? mergePlatform(cur, b.platform) : cur;
-    const parsed = orgSchema.safeParse({ ...org, ...(b.name ? { name: b.name } : {}), ...(b.showroomName ? { showroomName: b.showroomName } : {}), ...(b.plan ? { plan: b.plan } : {}), ...(b.status ? { status: b.status } : {}), platform });
+    const business = b.business ? { business: { ...org.business, ...b.business } } : {};
+    const parsed = orgSchema.safeParse({ ...org, ...(b.name ? { name: b.name } : {}), ...(b.showroomName ? { showroomName: b.showroomName } : {}), ...(b.plan ? { plan: b.plan } : {}), ...(b.status ? { status: b.status } : {}), platform, ...business });
     if (!parsed.success) return reply.code(400).send({ error: "Validation failed", issues: parsed.error.issues });
     await global.orgs().set(parsed.data);
 

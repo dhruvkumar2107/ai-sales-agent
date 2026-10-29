@@ -30,7 +30,7 @@ async function pickBranch(ctx: ToolContext, kind: "sales" | "service", branchId?
   return branches.find((b) => !/service/i.test(b.name)) ?? branches[0] ?? null;
 }
 
-async function notify(ctx: ToolContext, phone: string, template: TemplateName, vars: Record<string, string | undefined>) {
+export async function notify(ctx: ToolContext, phone: string, template: TemplateName, vars: Record<string, string | undefined>) {
   const settings = await ctx.repo.settings();
   const channel = settings.messaging.channel === "sms" ? "sms" : "whatsapp";
   const base = { orgId: ctx.orgId, to: phone, template, vars, language: ctx.language, callId: ctx.callId };
@@ -44,7 +44,7 @@ async function notify(ctx: ToolContext, phone: string, template: TemplateName, v
 }
 
 /** Staff heads-up (hot lead / callback due) by SMS; logged as an internal message. */
-const alertStaff = (ctx: ToolContext, to: string, vars: Record<string, string | undefined>) =>
+export const alertStaff = (ctx: ToolContext, to: string, vars: Record<string, string | undefined>) =>
   sendOrgMessage({ orgId: ctx.orgId, to, channel: "sms", template: "exec_hot_lead", vars, callId: ctx.callId, audience: "internal" });
 
 // ---------------------------------------------------------------- catalog
@@ -404,6 +404,8 @@ export const transferToHuman = defineTool({
         target = { name: candidates[i]!.name, number: candidates[i]!.phone! };
       } else if (branch?.transferNumbers[input.department]) {
         target = { name: `${input.department} desk`, number: branch.transferNumbers[input.department] };
+      } else if (ctx.org.business?.staffPhone) {
+        target = { name: "our team", number: ctx.org.business.staffPhone };
       }
     }
 
@@ -418,7 +420,8 @@ export const transferToHuman = defineTool({
     const assignee = preferred ?? candidates[0];
     const dueAt = new Date(Date.now() + (input.priority === "instant" ? 5 : input.priority === "high" ? 30 : 240) * 60_000).toISOString();
     await ctx.repo.callbacks.set({ id: newId("cb_"), orgId: ctx.orgId, phone: normalizePhone(ctx.callerPhone), customerName: lead?.name, department: input.department, reason: input.reason, priority: input.priority, assignedTo: assignee?.id, dueAt, status: "pending", callId: ctx.callId, createdAt: nowIso() });
-    if (assignee?.phone) await alertStaff(ctx, assignee.phone, { name: callerName, phone: ctx.callerPhone, model: lead?.interestedModel ?? "-", reason: `${input.reason} (callback due)` });
+    const alertTo = assignee?.phone ?? ctx.org.business?.staffPhone;
+    if (alertTo) await alertStaff(ctx, alertTo, { name: callerName, phone: ctx.callerPhone, model: lead?.interestedModel ?? "-", reason: `${input.reason} (callback due)` });
     await notify(ctx, ctx.callerPhone, "callback_notice", { showroom: ctx.org.showroomName, department: input.department });
     return { transferred: false, callbackScheduled: true, withinMinutes: input.priority === "instant" ? 5 : input.priority === "high" ? 30 : 240, note: "Tell the caller warmly that a person will call back shortly." };
   },

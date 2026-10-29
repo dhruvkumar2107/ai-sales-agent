@@ -1,7 +1,9 @@
+import type { Org } from "@axo/shared";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { env } from "../config";
 import type { LlmToolDef } from "../providers/llm/types";
 import type { ToolContext, ToolDefinition } from "./types";
+import { businessTools } from "./business";
 import { ALL_TOOLS } from "./definitions";
 
 export * from "./types";
@@ -77,4 +79,14 @@ export function createToolRegistry(tools: ToolDefinition[] = ALL_TOOLS): ToolReg
       }
     },
   };
+}
+
+const registries = new Map<string, ToolRegistry>();
+
+/** The tool set for an org: the showroom tools, or for any other business the tools its ticked actions unlock. */
+export function toolRegistryFor(org: Org): ToolRegistry {
+  const key = org.business ? [...org.business.actions].sort().join(",") : "showroom";
+  let reg = registries.get(key);
+  if (!reg) registries.set(key, (reg = createToolRegistry(org.business ? businessTools(org.business.actions) : ALL_TOOLS)));
+  return reg;
 }
