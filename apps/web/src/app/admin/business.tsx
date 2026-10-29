@@ -345,6 +345,115 @@ export function BusinessProfileCard({ business, saving, onSave }: { business: Bu
   );
 }
 
+interface AvailableNumber {
+  phoneNumber: string;
+  friendlyName: string;
+  locality: string;
+  region: string;
+}
+
+/** Buy a Twilio number for this business (linked and configured on purchase) and send the WhatsApp self-connect link. */
+export function ProvisionCard({ orgId, businessName, onDone }: { orgId: string; businessName: string; onDone: () => void }) {
+  const [type, setType] = useState("local");
+  const [contains, setContains] = useState("");
+  const [numbers, setNumbers] = useState<AvailableNumber[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<ConnectResult | null>(null);
+  const [link, setLink] = useState<{ url: string; ready: boolean } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const run = async (what: string, f: () => Promise<void>) => {
+    setBusy(what);
+    setError(null);
+    try {
+      await f();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const search = () => run("search", async () => setNumbers((await api<{ numbers: AvailableNumber[] }>(`/admin/twilio/available?country=IN&type=${type}&contains=${encodeURIComponent(contains)}`)).numbers));
+  const buy = (n: string) =>
+    run(n, async () => {
+      if (!window.confirm(`Buy ${n} on your Twilio account for ${businessName}? Twilio charges its monthly number fee.`)) return;
+      setResult(await api<ConnectResult>(`/admin/orgs/${orgId}/buy-number`, { method: "POST", json: { phoneNumber: n } }));
+      setNumbers(null);
+      onDone();
+    });
+  const getLink = () => run("link", async () => setLink(await api<{ url: string; ready: boolean }>(`/admin/orgs/${orgId}/whatsapp-link`)));
+  const shareText = link ? `Hi! Please open this link to connect your WhatsApp number to your AI assistant (takes 2 minutes): ${link.url}` : "";
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Get numbers automatically</CardTitle>
+        <CardDescription>Buy a calling number from your Twilio account in one click, and send the business a link to connect its own WhatsApp.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ErrorNote error={error} />
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">Calling number</h3>
+          <div className="flex flex-wrap gap-2">
+            <Select className="w-32" value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="local">Landline</option>
+              <option value="mobile">Mobile</option>
+              <option value="tollfree">Toll-free</option>
+            </Select>
+            <Input className="w-40" value={contains} onChange={(e) => setContains(e.target.value)} placeholder="Digits, e.g. 80" />
+            <Button variant="outline" disabled={busy !== null} onClick={() => void search()}>
+              {busy === "search" ? "Searching…" : "Find numbers"}
+            </Button>
+          </div>
+          {numbers && !numbers.length && <p className="text-sm text-muted-foreground">No numbers available with these filters. Try another type or fewer digits.</p>}
+          {numbers?.map((n) => (
+            <div key={n.phoneNumber} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
+              <span>
+                <span className="font-medium tabular-nums">{n.friendlyName}</span>
+                <span className="text-xs text-muted-foreground"> {[n.locality, n.region].filter(Boolean).join(", ")}</span>
+              </span>
+              <Button size="sm" disabled={busy !== null} onClick={() => void buy(n.phoneNumber)}>
+                {busy === n.phoneNumber ? "Buying…" : "Buy"}
+              </Button>
+            </div>
+          ))}
+          {result && <SetupReport result={result} />}
+        </section>
+        <section className="space-y-2">
+          <h3 className="text-sm font-semibold">WhatsApp</h3>
+          {!link ? (
+            <Button variant="outline" disabled={busy !== null} onClick={() => void getLink()}>
+              Create "Connect WhatsApp" link
+            </Button>
+          ) : (
+            <div className="space-y-2">
+              {!link.ready && <ErrorNote error="Add your Meta app ID, app secret and Embedded Signup configuration ID in Settings first; until then the link page asks the business to wait." />}
+              <Input readOnly value={link.url} onFocus={(e) => e.target.select()} />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(link.url);
+                    setCopied(true);
+                  }}
+                >
+                  {copied ? "Copied" : "Copy link"}
+                </Button>
+                <a href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer">
+                  <Button size="sm">Send on WhatsApp</Button>
+                </a>
+              </div>
+              <p className="text-xs text-muted-foreground">Valid for 14 days. When they finish, the number is linked here automatically.</p>
+            </div>
+          )}
+        </section>
+      </CardContent>
+    </Card>
+  );
+}
+
 /** Type the number, press Connect: links it to the agent and configures Twilio / Meta where the server can. */
 export function QuickConnectCard({ orgId, callNumber, whatsappNumber, onConnected }: { orgId: string; callNumber: string; whatsappNumber: string; onConnected: () => void }) {
   const [call, setCall] = useState(callNumber);

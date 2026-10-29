@@ -5,6 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import { env } from "./config";
 import { logger } from "./lib/logger";
 import { adminRoutes } from "./routes/admin";
+import { provisionRoutes } from "./routes/provision";
 import { campaignRoutes } from "./routes/campaigns";
 import { dashboardRoutes } from "./routes/dashboard";
 import { attachMediaServer } from "./routes/media";
@@ -29,6 +30,7 @@ export async function buildServer() {
   await campaignRoutes(app);
   await whatsappRoutes(app);
   await adminRoutes(app);
+  await provisionRoutes(app);
   attachMediaServer(app);
 
   app.setErrorHandler((err, req, reply) => {

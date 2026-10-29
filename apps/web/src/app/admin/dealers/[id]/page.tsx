@@ -7,7 +7,7 @@ import { PLAN_IDS, PLANS, type Call, type Message, type OrgPlatform } from "@axo
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Empty, ErrorNote, Field, Input, PageHeader, Select, Stat, Table, Td, Textarea, Th, Tr } from "@/components/ui";
 import { api, useApi } from "@/lib/api";
 import { formatDateTime, formatDuration, formatINR, formatINR2, humanize, maskPhone } from "@/lib/utils";
-import { BusinessProfileCard, QuickConnectCard } from "../../business";
+import { BusinessProfileCard, ProvisionCard, QuickConnectCard } from "../../business";
 import { FEATURE_LABELS, openDealerDashboard, type DealerRow } from "../../shared";
 
 interface Detail extends DealerRow {
@@ -90,6 +90,7 @@ export default function DealerAdminPage({ params }: { params: { id: string } }) 
       <div className="grid gap-6 lg:grid-cols-2">
         {org.business && <BusinessProfileCard business={org.business} saving={saving === "business"} onSave={(b) => void patch("business", { business: b })} />}
         <QuickConnectCard orgId={org.id} callNumber={data.agents.find((a) => a.phoneNumbers.length)?.phoneNumbers[0] ?? ""} whatsappNumber={org.platform.whatsapp.displayNumber} onConnected={() => void reload()} />
+        <ProvisionCard orgId={org.id} businessName={org.name} onDone={() => void reload()} />
         <Controls org={org} saving={saving === "controls"} onSave={(b) => void patch("controls", b)} />
         <WhatsappSetup platform={org.platform} token={data.whatsappToken} adminMe={adminMe} saving={saving === "whatsapp"} onSave={(b) => void patch("whatsapp", b)} />
         <CallingSetup

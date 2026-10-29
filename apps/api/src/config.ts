@@ -51,6 +51,9 @@ const envSchema = z.object({
   META_WABA_ID: z.string().optional(),
   META_WA_VERIFY_TOKEN: z.string().default("axo-verify"),
   META_APP_SECRET: z.string().optional(),
+  /** Meta app id and Embedded Signup configuration id: lets businesses connect their own WhatsApp from a link */
+  META_APP_ID: z.string().optional(),
+  META_ES_CONFIG_ID: z.string().optional(),
   META_GRAPH_VERSION: z.string().default("v21.0"),
   /** Dealership that receives WhatsApp messages sent to the platform default number */
   WHATSAPP_DEFAULT_ORG_ID: z.string().optional(),
@@ -59,6 +62,9 @@ const envSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_PHONE_NUMBER: z.string().optional(),
   TWILIO_WHATSAPP_FROM: z.string().optional(),
+  /** Approved regulatory bundle and address, required to buy numbers in India and many other countries */
+  TWILIO_BUNDLE_SID: z.string().optional(),
+  TWILIO_ADDRESS_SID: z.string().optional(),
 
   EXOTEL_SID: z.string().optional(),
   EXOTEL_API_KEY: z.string().optional(),

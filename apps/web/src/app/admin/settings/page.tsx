@@ -41,6 +41,7 @@ export default function AdminSettingsPage() {
       <PageHeader title="Settings" description="Your provider keys, the partner split and the price list. Every business uses these keys." />
       <ErrorNote error={error} />
       <div className="grid gap-6 lg:grid-cols-2">
+        {data && <SetupChecklist fields={data.fields} />}
         {data && <KeysCard fields={data.fields} onSaved={() => void reload()} />}
         <div className="space-y-6">
           {data && <PartnersCard partners={data.partners} />}
@@ -66,6 +67,57 @@ export default function AdminSettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/** The one-time account setup, in order, with where to click and what to paste; ticks itself off as keys are saved. */
+const STEPS: { title: string; keys: string[]; optional?: boolean; links: { label: string; url: string }[]; how: string }[] = [
+  { title: "Public server URL", keys: ["PUBLIC_BASE_URL"], links: [{ label: "Render dashboard", url: "https://dashboard.render.com" }], how: "Copy your API service's https address (e.g. https://axo-api.onrender.com) into Public server URL." },
+  { title: "Gemini AI key", keys: ["GEMINI_API_KEY"], links: [{ label: "Get API key", url: "https://aistudio.google.com/app/apikey" }], how: "Sign in with Google, Create API key, copy it into Gemini API key, and set AI model provider to gemini." },
+  { title: "Twilio account", keys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"], links: [{ label: "Sign up", url: "https://www.twilio.com/try-twilio" }, { label: "Console", url: "https://console.twilio.com" }], how: "Sign up, verify your email and phone, upgrade with a card, then copy Account SID and Auth Token from the Console home page." },
+  { title: "Twilio India documents", keys: ["TWILIO_BUNDLE_SID"], links: [{ label: "Regulatory Compliance", url: "https://console.twilio.com/us1/develop/phone-numbers/regulatory-compliance/bundles" }], how: "Create a Bundle for India (business address + GST or company documents). Once approved (1-3 days), paste the BU… id and the AD… address id." },
+  { title: "Meta business and WhatsApp account", keys: ["META_WA_TOKEN", "META_WABA_ID"], links: [{ label: "Business settings", url: "https://business.facebook.com/settings" }, { label: "WhatsApp Manager", url: "https://business.facebook.com/wa/manage/home/" }], how: "In Business settings > Users > System users, add an admin system user, assign your app and WhatsApp account, Generate token with whatsapp_business_messaging and whatsapp_business_management, and paste it. Copy the WhatsApp Business Account ID from WhatsApp Manager." },
+  { title: "Meta app and webhook", keys: ["META_APP_ID", "META_APP_SECRET"], links: [{ label: "Meta for Developers", url: "https://developers.facebook.com/apps" }], how: "Create a Business app with the WhatsApp product; copy App ID and App secret from Settings > Basic. Under WhatsApp > Configuration, paste the webhook URL and verify token shown on this page and subscribe to messages." },
+  { title: "WhatsApp self-connect for businesses", keys: ["META_ES_CONFIG_ID"], optional: true, links: [{ label: "Business verification", url: "https://business.facebook.com/settings/security" }, { label: "Embedded Signup docs", url: "https://developers.facebook.com/docs/whatsapp/embedded-signup" }], how: "Verify your business, apply as a Tech Provider, then in your app > Facebook Login for Business > Configurations create a WhatsApp Embedded Signup configuration and paste its ID." },
+];
+
+function SetupChecklist({ fields }: { fields: KeyField[] }) {
+  const isSet = (k: string) => {
+    const f = fields.find((x) => x.key === k);
+    return Boolean(f && f.source !== "not set" && !(k === "PUBLIC_BASE_URL" && /localhost/.test(f.value)));
+  };
+  const done = STEPS.filter((s) => s.keys.every(isSet)).length;
+  return (
+    <Card className="lg:col-span-2">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          One-time setup <Badge variant={done === STEPS.length ? "success" : "secondary"}>{done}/{STEPS.length} done</Badge>
+        </CardTitle>
+        <CardDescription>Do these once for the whole platform. After that, every new business is set up from the admin panel: buy its number in one click and send it the WhatsApp link.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-2">
+        {STEPS.map((s, i) => {
+          const ok = s.keys.every(isSet);
+          return (
+            <div key={s.title} className={`rounded-md border p-3 text-sm ${ok ? "border-emerald-500/40 bg-emerald-500/5" : ""}`}>
+              <div className="mb-1 flex items-center gap-2 font-medium">
+                {ok ? <CheckCircle2 className="h-4 w-4 text-emerald-600" /> : <span className="flex h-4 w-4 items-center justify-center rounded-full border text-[10px]">{i + 1}</span>}
+                {s.title}
+                {s.optional && <Badge variant="secondary">later</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground">{s.how}</p>
+              <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                {s.links.map((l) => (
+                  <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">
+                    {l.label} ↗
+                  </a>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 

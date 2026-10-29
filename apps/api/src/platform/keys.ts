@@ -26,6 +26,8 @@ export const KEY_FIELDS: KeyField[] = [
   { key: "TWILIO_ACCOUNT_SID", group: "Phone calls", label: "Twilio Account SID", hint: "Twilio Console > Account info" },
   { key: "TWILIO_AUTH_TOKEN", group: "Phone calls", label: "Twilio Auth Token", secret: true },
   { key: "TWILIO_PHONE_NUMBER", group: "Phone calls", label: "Default Twilio number", hint: "Used for outbound calls and SMS when a business has no number of its own" },
+  { key: "TWILIO_BUNDLE_SID", group: "Phone calls", label: "Twilio regulatory Bundle SID", hint: "Twilio Console > Phone Numbers > Regulatory Compliance > Bundles (BU…). Needed to buy Indian numbers from the admin panel." },
+  { key: "TWILIO_ADDRESS_SID", group: "Phone calls", label: "Twilio Address SID", hint: "Twilio Console > Phone Numbers > Regulatory Compliance > Addresses (AD…)" },
   { key: "EXOTEL_SID", group: "Phone calls", label: "Exotel SID" },
   { key: "EXOTEL_API_KEY", group: "Phone calls", label: "Exotel API key", secret: true },
   { key: "EXOTEL_API_TOKEN", group: "Phone calls", label: "Exotel API token", secret: true },
@@ -39,6 +41,8 @@ export const KEY_FIELDS: KeyField[] = [
   { key: "META_WA_VERIFY_TOKEN", group: "WhatsApp", label: "Webhook verify token", hint: "Any word; paste the same in Meta > WhatsApp > Configuration" },
   { key: "META_APP_SECRET", group: "WhatsApp", label: "Meta app secret", hint: "Meta app > Settings > Basic. Used to check that webhooks really come from Meta.", secret: true },
 
+  { key: "META_APP_ID", group: "WhatsApp", label: "Meta app ID", hint: "developers.facebook.com > your app > Settings > Basic. With the next field, businesses connect their own WhatsApp from a link." },
+  { key: "META_ES_CONFIG_ID", group: "WhatsApp", label: "Embedded Signup configuration ID", hint: "Your app > Facebook Login for Business > Configurations > create one for WhatsApp Embedded Signup" },
   { key: "LLM_PROVIDER", group: "AI model", label: "AI model provider", options: ["gemini", "anthropic", "mock"] },
   { key: "GEMINI_API_KEY", group: "AI model", label: "Gemini API key", hint: "aistudio.google.com > Get API key", secret: true },
   { key: "GEMINI_MODEL", group: "AI model", label: "Gemini model" },
