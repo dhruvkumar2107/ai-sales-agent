@@ -74,6 +74,14 @@ Body shape:
 Fill `callNumber` / `whatsappNumber` only for numbers that already exist on our accounts. Save the returned `id`
 as the business id; report any `setup` statuses.
 
+One-shot option (what the admin panel's "Add business" does by default): add `"buyNumber": {"type": "local"}`
+(or `mobile` / `tollfree`) to buy and link the first available Indian number during creation, and
+`"whatsappSelfConnect": true` to get the WhatsApp connect link back as `whatsappLink.url`. Only add `buyNumber` after
+the user has confirmed the Twilio monthly charge; then skip step 3 and use `whatsappLink` in step 4.
+
+Voices: agents speak with Sarvam's native Indian voices (Anushka female, Abhilash male) once `SARVAM_API_KEY` is set
+in Settings. The admin Settings page has "Hear the voice" to check the accent.
+
 If the user set a different setup fee: `PATCH /admin/orgs/<id>` with `{"platform": {"setupFee": 25000}}` (0 waives it).
 
 ## 3. Calling number

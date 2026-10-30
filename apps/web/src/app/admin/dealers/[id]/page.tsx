@@ -90,7 +90,7 @@ export default function DealerAdminPage({ params }: { params: { id: string } }) 
       <div className="grid gap-6 lg:grid-cols-2">
         {org.business && <BusinessProfileCard business={org.business} saving={saving === "business"} onSave={(b) => void patch("business", { business: b })} />}
         <QuickConnectCard orgId={org.id} callNumber={data.agents.find((a) => a.phoneNumbers.length)?.phoneNumbers[0] ?? ""} whatsappNumber={org.platform.whatsapp.displayNumber} onConnected={() => void reload()} />
-        <ProvisionCard orgId={org.id} businessName={org.name} onDone={() => void reload()} />
+        <ProvisionCard orgId={org.id} businessName={org.name} ownerPhone={org.platform.contact.phone} onDone={() => void reload()} />
         <Controls org={org} saving={saving === "controls"} onSave={(b) => void patch("controls", b)} />
         <WhatsappSetup platform={org.platform} token={data.whatsappToken} adminMe={adminMe} saving={saving === "whatsapp"} onSave={(b) => void patch("whatsapp", b)} />
         <CallingSetup

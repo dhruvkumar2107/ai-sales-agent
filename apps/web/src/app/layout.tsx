@@ -3,8 +3,8 @@ import { AuthProvider } from "@/lib/auth-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AXO Voice Auto",
-  description: "Multilingual AI voice agent for bike and car showrooms",
+  title: "AXO Voice: AI receptionist for Indian businesses",
+  description: "Answers your calls and WhatsApp in a natural Indian voice, in English, Hindi, Hinglish and Kannada. Books appointments and captures every lead.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

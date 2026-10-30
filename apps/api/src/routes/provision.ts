@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { requireSuperAdmin } from "../auth/auth";
-import { buyTwilioNumber, completeWhatsappSignup, embeddedSignupReady, orgFromConnectToken, searchTwilioNumbers, twilioReady, whatsappConnectToken } from "../calls/provision";
+import { buyTwilioNumber, completeWhatsappSignup, embeddedSignupReady, orgFromConnectToken, searchTwilioNumbers, twilioReady, whatsappConnectLink } from "../calls/provision";
 import { env } from "../config";
 import { global, platformOf } from "../db/repo";
 
@@ -35,8 +35,7 @@ export async function provisionRoutes(app: FastifyInstance) {
   app.get("/admin/orgs/:id/whatsapp-link", { preHandler: admin }, async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!(await global.orgs().get(id))) return reply.code(404).send({ error: "Not found" });
-    const web = env.WEB_ORIGIN.split(",")[0]!.replace(/\/$/, "");
-    return { url: `${web}/connect/whatsapp/${whatsappConnectToken(id)}`, ready: embeddedSignupReady(), validDays: 14 };
+    return whatsappConnectLink(id);
   });
 
   app.get("/admin/provisioning", { preHandler: admin }, async () => ({ twilio: twilioReady(), whatsappSelfConnect: embeddedSignupReady() }));

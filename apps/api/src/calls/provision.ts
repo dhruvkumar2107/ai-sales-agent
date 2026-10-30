@@ -61,6 +61,35 @@ export async function buyTwilioNumber(orgId: string, phoneNumber: string): Promi
   return { ...(await connectNumbers(orgId, { callNumber: json.phone_number ?? number })), bought: json.phone_number ?? number };
 }
 
+/**
+ * Pick and buy a number with no choosing: tries the first few Indian numbers Twilio offers (another buyer can take
+ * one between search and purchase). Never throws; a failure comes back as an action_needed status with the reason.
+ */
+export async function autoBuyNumber(orgId: string, o: { type?: string; contains?: string } = {}): Promise<ConnectResult & { bought?: string }> {
+  const fail = (detail: string): ConnectResult => ({ calls: { status: "action_needed", number: "", detail } });
+  if (!twilioReady()) return fail("No number bought: add your Twilio Account SID and Auth Token in Settings, then use Get numbers on this business's page.");
+  let candidates: AvailableNumber[];
+  try {
+    candidates = await searchTwilioNumbers({ country: "IN", type: o.type, contains: o.contains });
+    // Fewer digits filter is the usual reason for an empty list; retry without it once.
+    if (!candidates.length && o.contains) candidates = await searchTwilioNumbers({ country: "IN", type: o.type });
+  } catch (err) {
+    return fail(`No number bought: ${(err as Error).message}`);
+  }
+  if (!candidates.length) return fail("Twilio has no Indian numbers of this type right now. Try another type from this business's page.");
+  let last = "";
+  for (const n of candidates.slice(0, 3)) {
+    try {
+      return await buyTwilioNumber(orgId, n.phoneNumber);
+    } catch (err) {
+      last = (err as Error).message;
+      // Missing documents or a card problem fails every number the same way; stop at the first.
+      if (!/not available|no longer|already/i.test(last)) break;
+    }
+  }
+  return fail(`No number bought: ${last}`);
+}
+
 // ---------------------------------------------------------------- WhatsApp self-connect link
 
 const LINK_DAYS = 14;
@@ -77,6 +106,12 @@ export function orgFromConnectToken(token: string): string | null {
   if (!payload || !sig || !safeEqual(hmacSha256(linkSecret(), payload).slice(0, 32), sig)) return null;
   const [orgId, exp] = Buffer.from(payload, "base64url").toString().split(".");
   return orgId && Number(exp) > Date.now() ? orgId : null;
+}
+
+/** The page a business opens to connect its WhatsApp; ready = false while the Meta app settings are missing. */
+export function whatsappConnectLink(orgId: string) {
+  const web = env.WEB_ORIGIN.split(",")[0]!.replace(/\/$/, "");
+  return { url: `${web}/connect/whatsapp/${whatsappConnectToken(orgId)}`, ready: embeddedSignupReady(), validDays: LINK_DAYS };
 }
 
 export const embeddedSignupReady = () => Boolean(env.META_APP_ID && env.META_APP_SECRET && env.META_ES_CONFIG_ID);

@@ -3,13 +3,16 @@ import { agentConfigSchema, businessProfileSchema, LANGUAGES, memberSchema, OVER
 import { AGENT_TEMPLATES } from "../../prompts/agents";
 import { businessAgentDefaults } from "../../prompts/business";
 import { requireSuperAdmin } from "../auth/auth";
+import { wavHeader } from "../audio/codec";
 import { checkNumbers, connectNumbers } from "../calls/connect";
 import { numberConflicts, syncPhoneRoutes } from "../calls/numbers";
+import { autoBuyNumber, whatsappConnectLink } from "../calls/provision";
 import { env } from "../config";
 import { global, newId, nowIso, platformOf, repo } from "../db/repo";
 import { encryptString, redactSecret } from "../lib/crypto";
 import { normalizePhone } from "../lib/mask";
 import { checkKeys, describeKeys, saveKeys } from "../platform/keys";
+import { createTts } from "../providers/tts";
 import { getPartners, savePartners, splitProfit, type Partner } from "../platform/partners";
 import { billing, monthStart, orgUsage } from "../platform/usage";
 
@@ -98,6 +101,28 @@ export async function adminRoutes(app: FastifyInstance) {
   /** Try every configured provider with a read-only request. */
   app.post("/admin/keys/check", { preHandler: admin }, async () => ({ checks: await checkKeys() }));
 
+  /** Hear how agents sound with the current speech settings: { language, voice } -> audio/wav. */
+  app.post("/admin/voice-preview", { preHandler: admin, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req, reply) => {
+    const b = (req.body ?? {}) as { language?: string; voice?: string };
+    const language = ((LANGUAGES as readonly string[]).includes(b.language ?? "") ? b.language : "en") as Language;
+    const text = {
+      en: "Hello! Thank you for calling. I can help you with prices, bookings and directions. How may I help you today?",
+      hi: "नमस्ते! कॉल करने के लिए धन्यवाद। बताइए, मैं आपकी क्या मदद कर सकती हूँ?",
+      hinglish: "Namaste! Call karne ke liye thank you. Bataiye, main aapki kya madad kar sakti hoon?",
+      kn: "ನಮಸ್ಕಾರ! ಕರೆ ಮಾಡಿದ್ದಕ್ಕೆ ಧನ್ಯವಾದಗಳು. ನಾನು ಹೇಗೆ ಸಹಾಯ ಮಾಡಲಿ?",
+    }[language];
+    const tts = createTts();
+    if (tts.name === "mock") return reply.code(400).send({ error: "No voice key yet. Add your Sarvam API key under Speech and save." });
+    const parts: Buffer[] = [];
+    try {
+      for await (const chunk of tts.synthesize({ text, language, voice: b.voice || undefined })) parts.push(chunk);
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
+    const pcm = Buffer.concat(parts);
+    return reply.header("content-type", "audio/wav").header("x-tts-provider", tts.name).send(Buffer.concat([wavHeader(pcm.length), pcm]));
+  });
+
   /** Partners and their profit shares: { partners: [{ name, share }] }, shares add up to 100. */
   app.put("/admin/partners", { preHandler: admin }, async (req, reply) => {
     const partners = ((req.body ?? {}) as { partners?: Partner[] }).partners ?? [];
@@ -155,6 +180,10 @@ export async function adminRoutes(app: FastifyInstance) {
       agent?: { name?: string; languages?: string[]; defaultLanguage?: string; voice?: "female" | "male" };
       callNumber?: string;
       whatsappNumber?: string;
+      /** Buy a new Indian calling number on our Twilio account and link it; type local | mobile | tollfree */
+      buyNumber?: { type?: string; contains?: string };
+      /** The business connects its own WhatsApp from a link (returned as whatsappLink) */
+      whatsappSelfConnect?: boolean;
     };
     if (!b.name?.trim()) return reply.code(400).send({ error: "Business name is required" });
     if (b.plan && !PLAN_IDS.includes(b.plan as (typeof PLAN_IDS)[number])) return reply.code(400).send({ error: "Unknown plan" });
@@ -194,7 +223,12 @@ export async function adminRoutes(app: FastifyInstance) {
       await r.members.set(invite);
     }
     const setup = numbers.callNumber || numbers.whatsappNumber ? await connectNumbers(orgId, numbers) : {};
-    return { ...((await global.orgs().get(orgId)) ?? org), setup };
+    if (b.buyNumber && !numbers.callNumber) {
+      const { bought: _b, ...bought } = await autoBuyNumber(orgId, b.buyNumber);
+      Object.assign(setup, bought);
+    }
+    const whatsappLink = b.whatsappSelfConnect && !numbers.whatsappNumber ? whatsappConnectLink(orgId) : undefined;
+    return { ...((await global.orgs().get(orgId)) ?? org), setup, whatsappLink };
   });
 
   /** Link a calling and/or WhatsApp number and configure the providers where possible; reports what is ready. */

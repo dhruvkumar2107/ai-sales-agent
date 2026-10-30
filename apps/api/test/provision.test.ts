@@ -73,4 +73,59 @@ describe("provisioning", () => {
       restore();
     }
   });
+
+  it("adding a business can buy its number and return the WhatsApp link in one step", async () => {
+    const restore = withEnv({ TELEPHONY_PROVIDER: "twilio", TWILIO_ACCOUNT_SID: "AC1", TWILIO_AUTH_TOKEN: "tok", PUBLIC_BASE_URL: "https://axo.example.com", WEB_ORIGIN: "https://app.example.com" });
+    let attempts = 0;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.includes("/AvailablePhoneNumbers/IN/Mobile.json")) return new Response(JSON.stringify({ available_phone_numbers: [{ phone_number: "+917000000001" }, { phone_number: "+917000000002" }] }));
+      if (url.endsWith("/IncomingPhoneNumbers.json") && init?.method === "POST") {
+        // The first number was taken by someone else between search and purchase.
+        if (attempts++ === 0) return new Response(JSON.stringify({ message: "Phone number is not available" }), { status: 400 });
+        return new Response(JSON.stringify({ phone_number: "+917000000002" }), { status: 201 });
+      }
+      return new Response("{}");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const app = await buildServer();
+      const res = (await app.inject({ method: "POST", url: "/admin/orgs", payload: { name: "Glow Salon", business: { type: "salon_spa" }, buyNumber: { type: "mobile" }, whatsappSelfConnect: true } })).json() as { id: string; setup: { calls: { status: string; number: string } }; whatsappLink: { url: string } };
+      expect(res.setup.calls).toMatchObject({ number: "+917000000002" });
+      expect(await global.phoneRoutes().get("+917000000002")).toMatchObject({ orgId: res.id });
+      expect(res.whatsappLink.url).toMatch(/^https:\/\/app\.example\.com\/connect\/whatsapp\//);
+    } finally {
+      vi.unstubAllGlobals();
+      restore();
+    }
+  });
+
+  it("without Twilio keys the business is still created and says why no number was bought", async () => {
+    const restore = withEnv({ TWILIO_ACCOUNT_SID: undefined, TWILIO_AUTH_TOKEN: undefined });
+    try {
+      const app = await buildServer();
+      const res = await app.inject({ method: "POST", url: "/admin/orgs", payload: { name: "Glow Salon", business: { type: "salon_spa" }, buyNumber: {} } });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ setup: { calls: { status: "action_needed" } } });
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("Indian voice", () => {
+  it("uses Sarvam whenever its key is set, and never sends Sarvam speaker names to ElevenLabs", async () => {
+    const { createTts, ElevenLabsTts } = await import("../src/providers/tts");
+    const restore = withEnv({ TTS_PROVIDER: "elevenlabs", SARVAM_API_KEY: "sk", ELEVENLABS_API_KEY: undefined });
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response(new Uint8Array(4)));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      expect(createTts().name).toBe("sarvam");
+      expect(createTts("mock").name).toBe("mock");
+      for await (const _ of new ElevenLabsTts().synthesize({ text: "hi", language: "en", voice: "anushka" })) break;
+      expect(String(fetchMock.mock.calls[0]![0])).toContain(`/text-to-speech/${env.ELEVENLABS_VOICE_ID}/`);
+    } finally {
+      vi.unstubAllGlobals();
+      restore();
+    }
+  });
 });

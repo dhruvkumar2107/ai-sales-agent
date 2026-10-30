@@ -49,12 +49,13 @@ export const KEY_FIELDS: KeyField[] = [
   { key: "ANTHROPIC_API_KEY", group: "AI model", label: "Anthropic API key", hint: "console.anthropic.com > API keys", secret: true },
   { key: "LLM_MODEL", group: "AI model", label: "Claude model" },
 
-  { key: "STT_PROVIDER", group: "Speech", label: "Speech-to-text", options: ["deepgram", "sarvam", "mock"] },
-  { key: "TTS_PROVIDER", group: "Speech", label: "Text-to-speech", options: ["elevenlabs", "sarvam", "mock"] },
+  { key: "STT_PROVIDER", group: "Speech", label: "Speech-to-text", hint: "sarvam understands Indian accents and Hinglish best", options: ["sarvam", "deepgram", "mock"] },
+  { key: "TTS_PROVIDER", group: "Speech", label: "Text-to-speech", hint: "sarvam = native Indian voices. Agents use Anushka (female) or Abhilash (male).", options: ["sarvam", "elevenlabs", "mock"] },
   { key: "DEEPGRAM_API_KEY", group: "Speech", label: "Deepgram API key", secret: true },
-  { key: "SARVAM_API_KEY", group: "Speech", label: "Sarvam API key", hint: "Indian languages, speech-to-text and voices", secret: true },
+  { key: "SARVAM_API_KEY", group: "Speech", label: "Sarvam API key", hint: "dashboard.sarvam.ai > API keys. One key gives Indian-accent voices and speech recognition.", secret: true },
+  { key: "SARVAM_TTS_SPEAKER", group: "Speech", label: "Default Indian voice", hint: "Used when an agent has no voice of its own", options: ["anushka", "manisha", "vidya", "arya", "abhilash", "karun", "hitesh"] },
   { key: "ELEVENLABS_API_KEY", group: "Speech", label: "ElevenLabs API key", secret: true },
-  { key: "ELEVENLABS_VOICE_ID", group: "Speech", label: "ElevenLabs voice ID" },
+  { key: "ELEVENLABS_VOICE_ID", group: "Speech", label: "ElevenLabs voice ID", hint: "Only for ElevenLabs: pick an Indian-accent voice in its Voice Library (filter: accent Indian) and paste its id" },
 ];
 
 const FIELD = new Map(KEY_FIELDS.map((f) => [f.key, f]));
@@ -161,6 +162,8 @@ export async function checkKeys(): Promise<KeyCheck[]> {
   if (env.GEMINI_API_KEY) await tryFetch("Gemini", `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(env.GEMINI_API_KEY)}`, {}, () => "Key works");
   if (env.ANTHROPIC_API_KEY) await tryFetch("Anthropic", "https://api.anthropic.com/v1/models?limit=1", { headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" } }, () => "Key works");
   if (env.DEEPGRAM_API_KEY) await tryFetch("Deepgram", "https://api.deepgram.com/v1/projects", { headers: { Authorization: `Token ${env.DEEPGRAM_API_KEY}` } }, () => "Key works");
+  if (env.SARVAM_API_KEY)
+    await tryFetch("Sarvam (Indian voices)", "https://api.sarvam.ai/text-to-speech", { method: "POST", headers: { "api-subscription-key": env.SARVAM_API_KEY, "content-type": "application/json" }, body: JSON.stringify({ text: "Namaste", target_language_code: "hi-IN", speaker: env.SARVAM_TTS_SPEAKER, model: env.SARVAM_TTS_MODEL }) }, () => "Key works");
   if (env.ELEVENLABS_API_KEY) await tryFetch("ElevenLabs", "https://api.elevenlabs.io/v1/user", { headers: { "xi-api-key": env.ELEVENLABS_API_KEY } }, () => "Key works");
   if (/localhost|127\.0\.0\.1/.test(env.PUBLIC_BASE_URL)) out.push({ name: "Public server URL", ok: false, detail: `${env.PUBLIC_BASE_URL} cannot be reached by Twilio or Meta. Set your https server address.` });
   if (!out.length) out.push({ name: "Keys", ok: false, detail: "No provider keys are set yet." });

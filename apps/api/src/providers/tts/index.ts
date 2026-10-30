@@ -37,7 +37,8 @@ async function* alignSamples(source: AsyncIterable<Uint8Array>): AsyncIterable<B
 export class ElevenLabsTts implements TtsProvider {
   readonly name = "elevenlabs";
   async *synthesize(req: TtsRequest): AsyncIterable<Buffer> {
-    const voice = req.voice || env.ELEVENLABS_VOICE_ID;
+    // Agent voices are Sarvam speaker names by default; only a real ElevenLabs voice id (20 characters) is used here.
+    const voice = req.voice && /^[A-Za-z0-9]{20}$/.test(req.voice) ? req.voice : env.ELEVENLABS_VOICE_ID;
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}/stream?output_format=pcm_16000&optimize_streaming_latency=3`, {
       method: "POST",
       signal: req.signal,
@@ -55,6 +56,10 @@ export class ElevenLabsTts implements TtsProvider {
   }
 }
 
+/** Sarvam bulbul speakers: all native Indian voices (Indian English, Hindi, Kannada and more). */
+export const SARVAM_SPEAKERS = { female: ["anushka", "manisha", "vidya", "arya"], male: ["abhilash", "karun", "hitesh"] } as const;
+const SARVAM_ALL: readonly string[] = [...SARVAM_SPEAKERS.female, ...SARVAM_SPEAKERS.male];
+
 /** Sarvam bulbul: natural Indian voices for Hindi, Kannada and Indian English. Returns WAV per request. */
 export class SarvamTts implements TtsProvider {
   readonly name = "sarvam";
@@ -66,7 +71,8 @@ export class SarvamTts implements TtsProvider {
       body: JSON.stringify({
         text: req.text,
         target_language_code: LOCALE[req.language],
-        speaker: req.voice || env.SARVAM_TTS_SPEAKER,
+        // An ElevenLabs id saved on an agent would be rejected by Sarvam; fall back to the default Indian speaker.
+        speaker: req.voice && SARVAM_ALL.includes(req.voice) ? req.voice : env.SARVAM_TTS_SPEAKER,
         model: env.SARVAM_TTS_MODEL,
         speech_sample_rate: 16000,
         enable_preprocessing: true,
@@ -97,8 +103,14 @@ export class MockTts implements TtsProvider {
   }
 }
 
+/**
+ * The chosen provider when its key is set, otherwise whichever key is present (Sarvam first: Indian accent),
+ * so pasting one speech key in Settings is enough. "mock" stays silent on purpose.
+ */
 export function createTts(kind = env.TTS_PROVIDER): TtsProvider {
+  if (kind === "mock") return new MockTts();
   if (kind === "elevenlabs" && env.ELEVENLABS_API_KEY) return new ElevenLabsTts();
-  if (kind === "sarvam" && env.SARVAM_API_KEY) return new SarvamTts();
+  if (env.SARVAM_API_KEY) return new SarvamTts();
+  if (env.ELEVENLABS_API_KEY) return new ElevenLabsTts();
   return new MockTts();
 }

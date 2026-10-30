@@ -69,6 +69,37 @@ export function SetupReport({ result }: { result: ConnectResult }) {
   );
 }
 
+/** The WhatsApp connect link with copy and one-tap send to the owner's own WhatsApp. */
+function WhatsappLinkBox({ link, ownerPhone }: { link: { url: string; ready: boolean }; ownerPhone?: string }) {
+  const [copied, setCopied] = useState(false);
+  const text = `Hi! Please open this link to connect your WhatsApp number to your AI assistant (takes 2 minutes): ${link.url}`;
+  const digits = (ownerPhone ?? "").replace(/\D/g, "");
+  const to = digits.length === 10 ? `91${digits}` : digits;
+  return (
+    <div className="mt-3 space-y-2 rounded-md border p-3 text-sm">
+      <div className="font-medium">WhatsApp: send this link to the owner</div>
+      {!link.ready && <ErrorNote error="Add your Meta app ID, app secret and Embedded Signup configuration ID in Settings first; until then the link page asks the business to wait." />}
+      <Input readOnly value={link.url} onFocus={(e) => e.target.select()} />
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            void navigator.clipboard.writeText(link.url);
+            setCopied(true);
+          }}
+        >
+          {copied ? "Copied" : "Copy link"}
+        </Button>
+        <a href={`https://wa.me/${to}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">
+          <Button size="sm">{to ? "Send to owner on WhatsApp" : "Send on WhatsApp"}</Button>
+        </a>
+      </div>
+      <p className="text-xs text-muted-foreground">Valid for 14 days. When they finish, the number is linked automatically. It must not be in use on the normal WhatsApp app.</p>
+    </div>
+  );
+}
+
 const emptyForm = () => ({
   name: "",
   type: "clinic",
@@ -83,9 +114,13 @@ const emptyForm = () => ({
   voice: "female" as "female" | "male",
   languages: ["en", "hi"],
   defaultLanguage: "en",
+  /** buy = a new Indian number from our Twilio account; existing = one already on our account; later = no number yet */
+  callMode: "buy" as "buy" | "existing" | "later",
+  numberType: "local",
   callNumber: "",
+  /** link = the owner connects their own WhatsApp from a link; same / existing = a number in our Meta account */
+  waMode: "link" as "link" | "same" | "existing" | "later",
   whatsappNumber: "",
-  sameNumber: true,
   ownerName: "",
   ownerPhone: "",
   ownerEmail: "",
@@ -97,7 +132,7 @@ export function AddBusinessDialog({ open, onClose, onCreated }: { open: boolean;
   const [f, setF] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState<{ id: string; setup: ConnectResult } | null>(null);
+  const [done, setDone] = useState<{ id: string; setup: ConnectResult; whatsappLink?: { url: string; ready: boolean } } | null>(null);
   const set = <K extends keyof ReturnType<typeof emptyForm>>(k: K, v: ReturnType<typeof emptyForm>[K]) => setF((cur) => ({ ...cur, [k]: v }));
   const type = typeOf(f.type);
 
@@ -113,7 +148,9 @@ export function AddBusinessDialog({ open, onClose, onCreated }: { open: boolean;
     setBusy(true);
     setError(null);
     try {
-      const res = await api<{ id: string; setup: ConnectResult }>("/admin/orgs", {
+      if (f.callMode === "buy" && !window.confirm(`A new Indian ${f.numberType === "tollfree" ? "toll-free" : f.numberType === "mobile" ? "mobile" : "landline"} number will be bought on your Twilio account for ${f.name}. Twilio charges its monthly number fee. Continue?`)) return;
+      const callNumber = f.callMode === "existing" ? f.callNumber : "";
+      const res = await api<{ id: string; setup: ConnectResult; whatsappLink?: { url: string; ready: boolean } }>("/admin/orgs", {
         method: "POST",
         json: {
           name: f.name,
@@ -123,8 +160,10 @@ export function AddBusinessDialog({ open, onClose, onCreated }: { open: boolean;
           ownerEmail: f.ownerEmail,
           business: { type: f.type, typeLabel: f.type === "other" ? f.typeLabel : "", description: f.description, knowledge: f.knowledge, actions: f.actions, address: f.address, mapLink: f.mapLink, timings: f.timings, staffPhone: f.ownerPhone },
           agent: { name: f.agentName, voice: f.voice, languages: f.languages, defaultLanguage: f.defaultLanguage },
-          callNumber: f.callNumber,
-          whatsappNumber: f.sameNumber ? f.callNumber : f.whatsappNumber,
+          callNumber,
+          whatsappNumber: f.waMode === "same" ? callNumber : f.waMode === "existing" ? f.whatsappNumber : "",
+          buyNumber: f.callMode === "buy" ? { type: f.numberType } : undefined,
+          whatsappSelfConnect: f.waMode === "link",
         },
       });
       setDone(res);
@@ -144,6 +183,7 @@ export function AddBusinessDialog({ open, onClose, onCreated }: { open: boolean;
           {f.agentName} now knows the business and does what you ticked. {nothing ? "Add a calling or WhatsApp number from the business page to go live." : ""}
         </p>
         <SetupReport result={done.setup} />
+        {done.whatsappLink && <WhatsappLinkBox link={done.whatsappLink} ownerPhone={f.ownerPhone} />}
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="ghost" onClick={close}>
             Close
@@ -252,15 +292,29 @@ export function AddBusinessDialog({ open, onClose, onCreated }: { open: boolean;
         <section className="space-y-3">
           <h3 className="text-sm font-semibold">3. Numbers</h3>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Calling number" hint="A number on your Twilio/Exotel account. Customers who call it reach the AI.">
-              <Input value={f.callNumber} onChange={(e) => set("callNumber", e.target.value)} placeholder="+91 80 4123 4567" />
+            <Field label="Calling number" hint={f.callMode === "buy" ? "Bought from your Twilio account and connected to the AI automatically" : f.callMode === "existing" ? "A number already on your Twilio/Exotel account" : "Add one later from the business page"}>
+              <Select value={f.callMode} onChange={(e) => setF((cur) => ({ ...cur, callMode: e.target.value as "buy" | "existing" | "later", waMode: cur.waMode === "same" && e.target.value !== "existing" ? "link" : cur.waMode }))}>
+                <option value="buy">Buy a new number automatically</option>
+                <option value="existing">I already have a number</option>
+                <option value="later">Later</option>
+              </Select>
+              {f.callMode === "buy" && (
+                <Select value={f.numberType} onChange={(e) => set("numberType", e.target.value)} aria-label="Number type">
+                  <option value="local">Landline (local)</option>
+                  <option value="mobile">Mobile</option>
+                  <option value="tollfree">Toll-free</option>
+                </Select>
+              )}
+              {f.callMode === "existing" && <Input value={f.callNumber} onChange={(e) => set("callNumber", e.target.value)} placeholder="+91 80 4123 4567" />}
             </Field>
-            <Field label="WhatsApp number" hint="Must be added to your WhatsApp Business account in Meta.">
-              <Input value={f.sameNumber ? f.callNumber : f.whatsappNumber} disabled={f.sameNumber} onChange={(e) => set("whatsappNumber", e.target.value)} placeholder="+91 98450 00000" />
-              <label className="flex items-center gap-1.5 text-xs">
-                <input type="checkbox" className="h-3.5 w-3.5 accent-primary" checked={f.sameNumber} onChange={(e) => set("sameNumber", e.target.checked)} />
-                Same as calling number
-              </label>
+            <Field label="WhatsApp" hint={f.waMode === "link" ? "You get a link to send the owner; they connect their own number in 2 minutes" : f.waMode === "later" ? "Add it later from the business page" : "Must already be added to your WhatsApp Business account in Meta"}>
+              <Select value={f.waMode} onChange={(e) => set("waMode", e.target.value as "link" | "same" | "existing" | "later")}>
+                <option value="link">Owner connects their WhatsApp (link)</option>
+                {f.callMode === "existing" && <option value="same">Same as calling number</option>}
+                <option value="existing">A number in my Meta account</option>
+                <option value="later">Later</option>
+              </Select>
+              {f.waMode === "existing" && <Input value={f.whatsappNumber} onChange={(e) => set("whatsappNumber", e.target.value)} placeholder="+91 98450 00000" />}
             </Field>
           </div>
         </section>
@@ -293,7 +347,7 @@ export function AddBusinessDialog({ open, onClose, onCreated }: { open: boolean;
           <Button type="button" variant="ghost" onClick={close}>
             Cancel
           </Button>
-          <Button disabled={busy || !f.name.trim() || !f.actions.length}>{busy ? "Setting up…" : "Create and go live"}</Button>
+          <Button disabled={busy || !f.name.trim() || !f.actions.length}>{busy ? (f.callMode === "buy" ? "Setting up and buying the number…" : "Setting up…") : "Create and go live"}</Button>
         </div>
       </form>
     </Dialog>
@@ -353,7 +407,7 @@ interface AvailableNumber {
 }
 
 /** Buy a Twilio number for this business (linked and configured on purchase) and send the WhatsApp self-connect link. */
-export function ProvisionCard({ orgId, businessName, onDone }: { orgId: string; businessName: string; onDone: () => void }) {
+export function ProvisionCard({ orgId, businessName, ownerPhone, onDone }: { orgId: string; businessName: string; ownerPhone?: string; onDone: () => void }) {
   const [type, setType] = useState("local");
   const [contains, setContains] = useState("");
   const [numbers, setNumbers] = useState<AvailableNumber[] | null>(null);
@@ -361,7 +415,6 @@ export function ProvisionCard({ orgId, businessName, onDone }: { orgId: string; 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ConnectResult | null>(null);
   const [link, setLink] = useState<{ url: string; ready: boolean } | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const run = async (what: string, f: () => Promise<void>) => {
     setBusy(what);
@@ -383,7 +436,6 @@ export function ProvisionCard({ orgId, businessName, onDone }: { orgId: string; 
       onDone();
     });
   const getLink = () => run("link", async () => setLink(await api<{ url: string; ready: boolean }>(`/admin/orgs/${orgId}/whatsapp-link`)));
-  const shareText = link ? `Hi! Please open this link to connect your WhatsApp number to your AI assistant (takes 2 minutes): ${link.url}` : "";
 
   return (
     <Card>
@@ -427,26 +479,7 @@ export function ProvisionCard({ orgId, businessName, onDone }: { orgId: string; 
               Create "Connect WhatsApp" link
             </Button>
           ) : (
-            <div className="space-y-2">
-              {!link.ready && <ErrorNote error="Add your Meta app ID, app secret and Embedded Signup configuration ID in Settings first; until then the link page asks the business to wait." />}
-              <Input readOnly value={link.url} onFocus={(e) => e.target.select()} />
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(link.url);
-                    setCopied(true);
-                  }}
-                >
-                  {copied ? "Copied" : "Copy link"}
-                </Button>
-                <a href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noreferrer">
-                  <Button size="sm">Send on WhatsApp</Button>
-                </a>
-              </div>
-              <p className="text-xs text-muted-foreground">Valid for 14 days. When they finish, the number is linked here automatically.</p>
-            </div>
+            <WhatsappLinkBox link={link} ownerPhone={ownerPhone} />
           )}
         </section>
       </CardContent>

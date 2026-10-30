@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, CircleAlert } from "lucide-react";
+import { ArrowLeft, CheckCircle2, CircleAlert, Volume2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PLAN_IDS, PLANS } from "@axo/shared";
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, ErrorNote, Field, Input, PageHeader, Select, Table, Td, Th, Tr } from "@/components/ui";
-import { api, useApi } from "@/lib/api";
+import { api, apiBlob, useApi } from "@/lib/api";
 import { formatINR } from "@/lib/utils";
 
 interface KeyField {
@@ -44,6 +44,7 @@ export default function AdminSettingsPage() {
         {data && <SetupChecklist fields={data.fields} />}
         {data && <KeysCard fields={data.fields} onSaved={() => void reload()} />}
         <div className="space-y-6">
+          <VoicePreviewCard />
           {data && <PartnersCard partners={data.partners} />}
           <PricingCard pricing={me?.pricing} />
           {me && (
@@ -74,6 +75,7 @@ export default function AdminSettingsPage() {
 const STEPS: { title: string; keys: string[]; optional?: boolean; links: { label: string; url: string }[]; how: string }[] = [
   { title: "Public server URL", keys: ["PUBLIC_BASE_URL"], links: [{ label: "Render dashboard", url: "https://dashboard.render.com" }], how: "Copy your API service's https address (e.g. https://axo-api.onrender.com) into Public server URL." },
   { title: "Gemini AI key", keys: ["GEMINI_API_KEY"], links: [{ label: "Get API key", url: "https://aistudio.google.com/app/apikey" }], how: "Sign in with Google, Create API key, copy it into Gemini API key, and set AI model provider to gemini." },
+  { title: "Indian voice (Sarvam)", keys: ["SARVAM_API_KEY"], links: [{ label: "Get API key", url: "https://dashboard.sarvam.ai" }], how: "Sign up, open API keys, create one and paste it into Sarvam API key. Agents then speak with a native Indian accent in English, Hindi and Kannada and understand Indian callers. Use Hear the voice to check." },
   { title: "Twilio account", keys: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"], links: [{ label: "Sign up", url: "https://www.twilio.com/try-twilio" }, { label: "Console", url: "https://console.twilio.com" }], how: "Sign up, verify your email and phone, upgrade with a card, then copy Account SID and Auth Token from the Console home page." },
   { title: "Twilio India documents", keys: ["TWILIO_BUNDLE_SID"], links: [{ label: "Regulatory Compliance", url: "https://console.twilio.com/us1/develop/phone-numbers/regulatory-compliance/bundles" }], how: "Create a Bundle for India (business address + GST or company documents). Once approved (1-3 days), paste the BU… id and the AD… address id." },
   { title: "Meta business and WhatsApp account", keys: ["META_WA_TOKEN", "META_WABA_ID"], links: [{ label: "Business settings", url: "https://business.facebook.com/settings" }, { label: "WhatsApp Manager", url: "https://business.facebook.com/wa/manage/home/" }], how: "In Business settings > Users > System users, add an admin system user, assign your app and WhatsApp account, Generate token with whatsapp_business_messaging and whatsapp_business_management, and paste it. Copy the WhatsApp Business Account ID from WhatsApp Manager." },
@@ -207,6 +209,69 @@ function KeysCard({ fields, onSaved }: { fields: KeyField[]; onSaved: () => void
           </Button>
           <Button disabled={busy} onClick={() => void save()}>
             {busy ? "Saving…" : "Save keys"}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const PREVIEW_VOICES = [
+  { id: "anushka", label: "Anushka (female)" },
+  { id: "manisha", label: "Manisha (female)" },
+  { id: "vidya", label: "Vidya (female)" },
+  { id: "arya", label: "Arya (female)" },
+  { id: "abhilash", label: "Abhilash (male)" },
+  { id: "karun", label: "Karun (male)" },
+  { id: "hitesh", label: "Hitesh (male)" },
+];
+
+/** Play a short greeting through the live speech settings, so the accent is checked before a customer hears it. */
+function VoicePreviewCard() {
+  const [language, setLanguage] = useState("en");
+  const [voice, setVoice] = useState("anushka");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const play = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const url = URL.createObjectURL(await apiBlob("/admin/voice-preview", { method: "POST", json: { language, voice } }));
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Hear the voice</CardTitle>
+        <CardDescription>How agents sound on calls with your current speech settings. Save keys first.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <ErrorNote error={error} />
+        <div className="flex flex-wrap gap-2">
+          <Select className="w-44" value={voice} onChange={(e) => setVoice(e.target.value)} aria-label="Voice">
+            {PREVIEW_VOICES.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </Select>
+          <Select className="w-32" value={language} onChange={(e) => setLanguage(e.target.value)} aria-label="Language">
+            <option value="en">English</option>
+            <option value="hi">Hindi</option>
+            <option value="hinglish">Hinglish</option>
+            <option value="kn">Kannada</option>
+          </Select>
+          <Button variant="outline" disabled={busy} onClick={() => void play()}>
+            <Volume2 className="h-4 w-4" /> {busy ? "Loading…" : "Play"}
           </Button>
         </div>
       </CardContent>

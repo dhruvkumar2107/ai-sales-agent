@@ -37,10 +37,13 @@ services:
         value: gemini-3.5-flash-lite,gemini-3.8-flash,gemini-flash-latest
       - key: TELEPHONY_PROVIDER
         value: mock
+      # Indian voices; until SARVAM_API_KEY is set (here or in admin Settings) calls run without audio
       - key: STT_PROVIDER
-        value: mock
+        value: sarvam
       - key: TTS_PROVIDER
-        value: mock
+        value: sarvam
+      - key: SARVAM_API_KEY
+        sync: false
       - key: MESSAGING_PROVIDER
         value: log
       # Dashboard origin(s) for CORS; set to your Vercel URL

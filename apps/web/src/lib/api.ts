@@ -51,7 +51,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+async function request(path: string, init: RequestInit & { json?: unknown }): Promise<Response> {
   const token = await getToken();
   const headers: Record<string, string> = { Authorization: `Bearer ${token}`, ...adminHeaders(), ...((init.headers as Record<string, string>) ?? {}) };
   let body = init.body;
@@ -64,7 +64,16 @@ export async function api<T = unknown>(path: string, init: RequestInit & { json?
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new ApiError(res.status, err.error ?? res.statusText);
   }
-  return (await res.json()) as T;
+  return res;
+}
+
+export async function api<T = unknown>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+  return (await (await request(path, init)).json()) as T;
+}
+
+/** Same as api() for binary responses (audio). */
+export async function apiBlob(path: string, init: RequestInit & { json?: unknown } = {}): Promise<Blob> {
+  return (await request(path, init)).blob();
 }
 
 /** Minimal data hook: fetch on mount / when the path changes, with optional polling. */

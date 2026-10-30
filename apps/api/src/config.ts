@@ -39,8 +39,9 @@ const envSchema = z.object({
 
   // Providers
   TELEPHONY_PROVIDER: z.enum(["twilio", "exotel", "mock"]).default("twilio"),
-  STT_PROVIDER: z.enum(["deepgram", "sarvam", "mock"]).default("deepgram"),
-  TTS_PROVIDER: z.enum(["elevenlabs", "sarvam", "mock"]).default("elevenlabs"),
+  STT_PROVIDER: z.enum(["deepgram", "sarvam", "mock"]).default("sarvam"),
+  /** sarvam = native Indian voices (Indian English, Hindi, Kannada); elevenlabs needs an Indian voice id from its Voice Library */
+  TTS_PROVIDER: z.enum(["elevenlabs", "sarvam", "mock"]).default("sarvam"),
   LLM_PROVIDER: z.enum(["anthropic", "gemini", "mock"]).default("anthropic"),
   MESSAGING_PROVIDER: z.enum(["twilio", "exotel", "meta", "log"]).default("log"),
 
